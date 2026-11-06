@@ -1,0 +1,3 @@
+-- Schema is managed by TypeORM (backend) for the Scholara demo.
+-- Keep this folder for optional Supabase CLI / Storage setup notes only.
+-- Do not recreate auth.users-linked tables here — the app uses Nest JWT, not Supabase Auth.

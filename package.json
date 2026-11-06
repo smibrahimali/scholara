@@ -1,0 +1,19 @@
+{
+  "name": "scholara",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:frontend": "npm run dev -w @scholara/frontend",
+    "dev:backend": "npm run start:dev -w @scholara/backend",
+    "dev:web": "npm run dev:frontend",
+    "dev:api": "npm run dev:backend",
+    "seed": "npm run seed -w @scholara/backend",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  }
+}

@@ -4,6 +4,8 @@ import { StudentProfile } from '../students/student-profile.entity';
 import { Document } from '../documents/document.entity';
 import { Application } from '../applications/application.entity';
 import { CallNote } from '../calls/call-note.entity';
+import { CallSession } from '../calls/call-session.entity';
+import { ConsultantProfile } from './consultant-profile.entity';
 import { ConsultantsController } from './consultants.controller';
 import { ConsultantsService } from './consultants.service';
 
@@ -14,6 +16,8 @@ import { ConsultantsService } from './consultants.service';
       Document,
       Application,
       CallNote,
+      CallSession,
+      ConsultantProfile,
     ]),
   ],
   controllers: [ConsultantsController],

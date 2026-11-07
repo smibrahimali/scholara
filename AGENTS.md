@@ -31,7 +31,7 @@ React (frontend)
 NestJS (backend)
   → TypeORM → Supabase PostgreSQL (DATABASE_URL)
   → StorageService → Supabase Storage (service role, private bucket)
-  → GroqService → Groq API (server-side only; later phase)
+  → GroqService → Groq API (server-side only; chat via `/api/chat`)
 ```
 
 ### Hard rules

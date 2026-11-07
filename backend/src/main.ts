@@ -16,8 +16,10 @@ async function bootstrap() {
       transform: true,
     }),
   );
+  const webOrigin =
+    config.get<string>('WEB_ORIGIN') ?? 'http://localhost:5173';
   app.enableCors({
-    origin: config.get<string>('WEB_ORIGIN') ?? 'http://localhost:5173',
+    origin: webOrigin,
     credentials: true,
   });
 
@@ -31,5 +33,7 @@ async function bootstrap() {
 
   const port = config.get<number>('PORT') ?? 3000;
   await app.listen(port);
+  // Socket.io for live 1:1 WebRTC signaling is mounted by CallsGateway
+  // at namespace /calls-realtime (same HTTP server / CORS origin as WEB_ORIGIN).
 }
 bootstrap();

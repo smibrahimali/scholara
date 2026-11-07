@@ -11,6 +11,9 @@ import { ApplicationsPage } from './pages/ApplicationsPage';
 import { ApplicationDetailPage } from './pages/ApplicationDetailPage';
 import { StudentDashboardPage } from './pages/StudentDashboardPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { MyConsultantPage } from './pages/MyConsultantPage';
+import { LiveCallPage } from './pages/LiveCallPage';
+import { EmailLogPage } from './pages/EmailLogPage';
 
 const queryClient = new QueryClient();
 
@@ -27,6 +30,16 @@ function ConsultantStudentDocuments() {
 function ConsultantStudentApplications() {
   const { studentId } = useParams<{ studentId: string }>();
   return <ApplicationsPage studentId={studentId} />;
+}
+
+function ConsultantStudentCalls() {
+  const { studentId } = useParams<{ studentId: string }>();
+  return <MyConsultantPage studentId={studentId} />;
+}
+
+function ConsultantStudentEmails() {
+  const { studentId } = useParams<{ studentId: string }>();
+  return <EmailLogPage studentId={studentId} />;
 }
 
 export default function App() {
@@ -48,6 +61,9 @@ export default function App() {
               <Route path="documents" element={<DocumentsPage />} />
               <Route path="applications" element={<ApplicationsPage />} />
               <Route path="profile" element={<ProfilePage />} />
+              <Route path="emails" element={<EmailLogPage />} />
+              <Route path="consultant" element={<MyConsultantPage />} />
+              <Route path="live-call/:callId" element={<LiveCallPage />} />
               <Route
                 path="applications/:id"
                 element={<ApplicationDetailPage />}
@@ -73,6 +89,22 @@ export default function App() {
                 element={
                   <ProtectedRoute roles={['CONSULTANT']}>
                     <ConsultantStudentApplications />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="students/:studentId/calls"
+                element={
+                  <ProtectedRoute roles={['CONSULTANT']}>
+                    <ConsultantStudentCalls />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="students/:studentId/emails"
+                element={
+                  <ProtectedRoute roles={['CONSULTANT']}>
+                    <ConsultantStudentEmails />
                   </ProtectedRoute>
                 }
               />

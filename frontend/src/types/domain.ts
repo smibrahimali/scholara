@@ -23,6 +23,8 @@ export interface DocumentItem {
   documentType: string;
   status: DocumentStatus;
   rejectionReason: string | null;
+  storagePath?: string | null;
+  hasFile?: boolean;
   updatedAt: string;
   reviews?: Array<{
     id: string;
@@ -48,6 +50,18 @@ export interface UniversityEmail {
   sender: string;
   sentAt: string;
   body: string;
+}
+
+export interface EmailLogItem {
+  id: string;
+  subject: string;
+  sender: string;
+  sentAt: string;
+  body: string;
+  applicationId: string;
+  universityName: string;
+  programName: string;
+  applicationStatus: ApplicationStatus;
 }
 
 export interface ApplicationItem {
@@ -112,4 +126,57 @@ export interface ConsultantStudent {
   pendingReviews: number;
   rejectedDocuments: number;
   applications: number;
+}
+
+export interface CallNoteItem {
+  id: string;
+  callSessionId: string;
+  summary: string;
+  actionItems: string;
+  universitiesDiscussed: string;
+  followUps: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CallSessionItem {
+  id: string;
+  studentId: string;
+  consultantId: string;
+  startedAt: string;
+  endedAt: string | null;
+  transcript: string | null;
+  note?: CallNoteItem | null;
+  consultant?: {
+    id: string;
+    title?: string;
+    user: { fullName: string; email: string };
+  };
+  student?: {
+    id: string;
+    user: { fullName: string; email: string };
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConsultantPeer {
+  id: string;
+  fullName: string;
+  email: string;
+  title: string | null;
+}
+
+export interface HandoverResult {
+  studentId: string;
+  studentName: string;
+  fromConsultantId: string;
+  toConsultant: { id: string; fullName: string; email: string };
+  closedOpenCalls: number;
+  inherited: {
+    callSessions: number;
+    documents: number;
+    applications: number;
+  };
+  message: string;
 }

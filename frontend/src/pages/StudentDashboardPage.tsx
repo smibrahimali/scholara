@@ -17,7 +17,7 @@ import { StatusBadge, toDocStatus } from '../components/ivy/StatusBadge';
 import { TapButton } from '../components/ivy/TapButton';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/cn';
-import { fetchDashboard } from '../services/scholaraApi';
+import { fetchCalls, fetchDashboard } from '../services/scholaraApi';
 import type { ApplicationStep, DocumentItem } from '../types/domain';
 
 function greetingForNow(date = new Date()) {
@@ -115,8 +115,16 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
     queryKey: ['dashboard', studentId ?? user?.id],
     queryFn: () => fetchDashboard(studentId),
   });
+  const callsQuery = useQuery({
+    queryKey: ['calls', studentId ?? 'self'],
+    queryFn: () => fetchCalls(studentId),
+    refetchInterval: 5000,
+    enabled: Boolean(user),
+  });
 
   const greeting = useMemo(() => greetingForNow(), []);
+  const openLiveCall =
+    callsQuery.data?.find((call) => !call.endedAt) ?? null;
 
   if (isLoading) return <HomeSkeleton />;
   if (error || !data) {
@@ -323,6 +331,24 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
         ))}
       </SectionMotion>
 
+      {openLiveCall && !studentId ? (
+        <SectionMotion index={2} className="mt-5">
+          <div className="rounded-2xl border border-success/30 bg-success/10 p-4">
+            <p className="font-semibold text-foreground">Live call waiting</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Your consultant is on a call. Join to speak — transcription runs
+              automatically.
+            </p>
+            <TapButton
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground"
+              onClick={() => navigate(`/app/live-call/${openLiveCall.id}`)}
+            >
+              <Phone className="h-4 w-4" /> Join live call
+            </TapButton>
+          </div>
+        </SectionMotion>
+      ) : null}
+
       {consultant ? (
         <SectionMotion index={3} className="mt-5">
           <div className="ivy-card flex items-center gap-3 p-4">
@@ -341,13 +367,30 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
             <TapButton
               aria-label="Message consultant"
               className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-gold-ink shadow-[inset_0_0_0_1px_rgba(120,53,15,0.12)]"
-              onClick={() => navigate('/app/profile')}
+              onClick={() =>
+                navigate(
+                  studentId
+                    ? `/app/students/${studentId}/calls`
+                    : '/app/consultant',
+                )
+              }
             >
               <MessageCircle className="h-4 w-4" />
             </TapButton>
             <TapButton
               aria-label="Call consultant"
               className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-gold-ink shadow-[inset_0_0_0_1px_rgba(120,53,15,0.12)]"
+              onClick={() => {
+                if (openLiveCall && !studentId) {
+                  navigate(`/app/live-call/${openLiveCall.id}`);
+                  return;
+                }
+                navigate(
+                  studentId
+                    ? `/app/students/${studentId}/calls`
+                    : '/app/consultant',
+                );
+              }}
             >
               <Phone className="h-4 w-4" />
             </TapButton>

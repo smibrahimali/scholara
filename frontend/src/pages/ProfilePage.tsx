@@ -1,12 +1,6 @@
 import { useNavigate } from 'react-router-dom';
-import {
-  ChevronRight,
-  LogOut,
-  Mail,
-  Phone,
-  ShieldCheck,
-  User,
-} from 'lucide-react';
+import { ChevronRight, LogOut, Mail, Phone, User } from 'lucide-react';
+import { toast } from 'sonner';
 import { PageMotion } from '../components/ivy/PageMotion';
 import { ScreenTitle } from '../components/ivy/ScreenTitle';
 import { TapButton } from '../components/ivy/TapButton';
@@ -20,10 +14,28 @@ export function ProfilePage() {
   if (!user) return null;
 
   const rows = [
-    { icon: User, label: 'Personal Information' },
-    { icon: Mail, label: 'Applied Email Log' },
-    { icon: Phone, label: 'My Consultant' },
-    { icon: ShieldCheck, label: 'Privacy & Security' },
+    {
+      icon: User,
+      label: 'Personal Information',
+      onClick: () =>
+        toast.message('Demo profile', {
+          description: `${user.fullName} · ${user.email}`,
+        }),
+    },
+    ...(user.role === 'CONSULTANT'
+      ? []
+      : [
+          {
+            icon: Mail,
+            label: 'Applied Email Log',
+            onClick: () => navigate('/app/emails'),
+          },
+          {
+            icon: Phone,
+            label: 'My Consultant',
+            onClick: () => navigate('/app/consultant'),
+          },
+        ]),
   ];
 
   return (
@@ -53,6 +65,7 @@ export function ProfilePage() {
           <button
             key={r.label}
             type="button"
+            onClick={r.onClick}
             className={cn(
               'flex min-h-14 w-full items-center gap-3 px-4 text-left',
               i > 0 && 'border-t border-border',

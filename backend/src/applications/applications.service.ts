@@ -10,6 +10,7 @@ import { AccessService } from '../common/access.service';
 import { JwtPayload } from '../auth/jwt-payload';
 import { Application } from './application.entity';
 import { ApplicationStep } from './application-step.entity';
+import { UniversityEmail } from '../emails/university-email.entity';
 import { UpdateStepDto } from './dto/update-step.dto';
 
 @Injectable()
@@ -19,6 +20,8 @@ export class ApplicationsService {
     private readonly applicationsRepo: Repository<Application>,
     @InjectRepository(ApplicationStep)
     private readonly stepsRepo: Repository<ApplicationStep>,
+    @InjectRepository(UniversityEmail)
+    private readonly emailsRepo: Repository<UniversityEmail>,
     private readonly access: AccessService,
   ) {}
 
@@ -36,6 +39,36 @@ export class ApplicationsService {
       },
       order: { updatedAt: 'DESC' },
     });
+  }
+
+  async listEmailsForUser(user: JwtPayload, studentId?: string) {
+    const resolvedStudentId = await this.access.resolveReadableStudentId(
+      user,
+      studentId,
+    );
+
+    const emails = await this.emailsRepo
+      .createQueryBuilder('email')
+      .innerJoinAndSelect('email.application', 'application')
+      .leftJoinAndSelect('application.university', 'university')
+      .leftJoinAndSelect('application.program', 'program')
+      .where('application.student_id = :studentId', {
+        studentId: resolvedStudentId,
+      })
+      .orderBy('email.sent_at', 'DESC')
+      .getMany();
+
+    return emails.map((email) => ({
+      id: email.id,
+      subject: email.subject,
+      sender: email.sender,
+      sentAt: email.sentAt,
+      body: email.body,
+      applicationId: email.applicationId,
+      universityName: email.application.university?.name ?? 'University',
+      programName: email.application.program?.name ?? 'Program',
+      applicationStatus: email.application.status,
+    }));
   }
 
   async getDetail(user: JwtPayload, applicationId: string) {

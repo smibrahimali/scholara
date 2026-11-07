@@ -12,6 +12,8 @@ import { DocumentsModule } from './documents/documents.module';
 import { ApplicationsModule } from './applications/applications.module';
 import { StudentsModule } from './students/students.module';
 import { ConsultantsModule } from './consultants/consultants.module';
+import { ChatModule } from './chat/chat.module';
+import { CallsModule } from './calls/calls.module';
 
 @Module({
   imports: [
@@ -29,6 +31,8 @@ import { ConsultantsModule } from './consultants/consultants.module';
     ApplicationsModule,
     StudentsModule,
     ConsultantsModule,
+    ChatModule,
+    CallsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

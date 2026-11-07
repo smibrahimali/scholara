@@ -14,17 +14,22 @@ Functional requirements: [`docs/Scholara-Specification.docx`](docs/Scholara-Spec
 - Seed script with Ali Raza, 3 universities, documents, emails, call notes
 - Student / guardian dashboards (documents, applications, deadlines)
 - Consultant desk (assigned students, document approve/reject, step updates)
-- Storage module stub for private Supabase bucket (file bytes upload still pending)
+- Student document upload / re-upload to private Supabase Storage (`student-documents`) via Nest
+- Signed download URLs for student / guardian / consultant viewers
 - Role layouts and REST APIs for documents / applications / dashboard
+- Ivy Classic student UI (navy / gold / ivory)
+- Groq AI chat API (`GET/POST/DELETE /api/chat/messages`) with role-scoped student context
+- Floating Scholara Assistant chatbot on authenticated screens (Nest → Groq only)
+- Calls API: list/detail, consultant start/end, transcript update, note upsert (demo; no VoIP)
+- Consultant handover API (`GET /api/consultant/peers`, `POST /api/consultant/handover`) — new consultant inherits apps/docs/call history
+- My Consultant / call history UI (student & guardian); consultant handover controls
+- Live 1:1 WebRTC audio call (`/app/live-call/:id`) with Socket.IO signaling + live transcription (browser STT / Groq Whisper)
+- Applied Email Log (`GET /api/emails`, Profile → Applied Email Log) aggregating university emails across applications
 
 **Not implemented yet**
 
-- Real file upload to Supabase Storage bucket
-- Groq AI assistant
-- Live call transcription UI
-- Tailwind design system pass
+- Phone/PSTN or TURN servers for difficult NATs (demo uses STUN + localhost/LAN WebRTC)
 - TypeORM migration files (dev currently uses `synchronize` when not in production)
-- Consultant reassignment UI
 
 ## Technology stack
 

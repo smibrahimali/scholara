@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -7,6 +7,7 @@ import { UserRole } from '../common/enums';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtPayload } from '../auth/jwt-payload';
 import { ConsultantsService } from './consultants.service';
+import { HandoverDto } from './dto/handover.dto';
 
 @ApiTags('consultant')
 @ApiBearerAuth()
@@ -19,6 +20,18 @@ export class ConsultantsController {
   @Roles(UserRole.CONSULTANT)
   listStudents(@CurrentUser() user: unknown) {
     return this.consultantsService.listAssignedStudents(user as JwtPayload);
+  }
+
+  @Get('consultant/peers')
+  @Roles(UserRole.CONSULTANT)
+  listPeers(@CurrentUser() user: unknown) {
+    return this.consultantsService.listPeers(user as JwtPayload);
+  }
+
+  @Post('consultant/handover')
+  @Roles(UserRole.CONSULTANT)
+  handover(@CurrentUser() user: unknown, @Body() dto: HandoverDto) {
+    return this.consultantsService.handover(user as JwtPayload, dto);
   }
 
   @Get('call-notes')

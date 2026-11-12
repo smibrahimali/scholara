@@ -15,7 +15,14 @@ import { MyConsultantPage } from './pages/MyConsultantPage';
 import { LiveCallPage } from './pages/LiveCallPage';
 import { EmailLogPage } from './pages/EmailLogPage';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 function ConsultantStudentDashboard() {
   const { studentId } = useParams<{ studentId: string }>();

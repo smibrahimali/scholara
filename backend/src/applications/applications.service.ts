@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -103,10 +104,13 @@ export class ApplicationsService {
     dto: UpdateStepDto,
   ) {
     if (user.role !== UserRole.CONSULTANT || !user.consultantProfileId) {
-      throw new BadRequestException('Only consultants can update steps');
+      throw new ForbiddenException('Only consultants can update steps');
     }
     if (stepNumber < 1 || stepNumber > 12) {
       throw new BadRequestException('Step must be between 1 and 12');
+    }
+    if (dto.status === undefined && dto.notes === undefined) {
+      throw new BadRequestException('Provide status and/or notes');
     }
 
     const application = await this.applicationsRepo.findOne({
@@ -128,13 +132,35 @@ export class ApplicationsService {
       throw new NotFoundException('Application step not found');
     }
 
-    step.status = dto.status;
-    step.notes = dto.notes ?? step.notes;
-    step.completedAt =
-      dto.status === ApplicationStepStatus.COMPLETED ||
-      dto.status === ApplicationStepStatus.SKIPPED
-        ? new Date()
-        : null;
+    if (dto.status !== undefined) {
+      const finishing =
+        dto.status === ApplicationStepStatus.COMPLETED ||
+        dto.status === ApplicationStepStatus.SKIPPED;
+
+      if (finishing && step.status !== ApplicationStepStatus.IN_PROGRESS) {
+        throw new BadRequestException('Only the current step can be completed');
+      }
+
+      step.status = dto.status;
+      step.completedAt = finishing ? new Date() : null;
+
+      if (finishing && stepNumber < 12) {
+        const nextStep = await this.stepsRepo.findOne({
+          where: { applicationId, stepNumber: stepNumber + 1 },
+        });
+        if (
+          nextStep &&
+          nextStep.status === ApplicationStepStatus.NOT_STARTED
+        ) {
+          nextStep.status = ApplicationStepStatus.IN_PROGRESS;
+          await this.stepsRepo.save(nextStep);
+        }
+      }
+    }
+
+    if (dto.notes !== undefined) {
+      step.notes = dto.notes;
+    }
 
     await this.stepsRepo.save(step);
     return this.getDetail(user, applicationId);

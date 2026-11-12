@@ -1,9 +1,12 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
+  AlertTriangle,
   ArrowRight,
   Bell,
+  CalendarDays,
   FileText,
   MessageCircle,
   Phone,
@@ -19,6 +22,14 @@ import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/cn';
 import { fetchCalls, fetchDashboard } from '../services/scholaraApi';
 import type { ApplicationStep, DocumentItem } from '../types/domain';
+
+type DemoNotification = {
+  id: string;
+  title: string;
+  detail: string;
+  tone: 'danger' | 'gold' | 'navy';
+  href: string;
+};
 
 function greetingForNow(date = new Date()) {
   const h = date.getHours();
@@ -111,6 +122,7 @@ function HomeSkeleton() {
 export function StudentDashboardPage({ studentId }: { studentId?: string }) {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [notifOpen, setNotifOpen] = useState(false);
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboard', studentId ?? user?.id],
     queryFn: () => fetchDashboard(studentId),
@@ -125,6 +137,81 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
   const greeting = useMemo(() => greetingForNow(), []);
   const openLiveCall =
     callsQuery.data?.find((call) => !call.endedAt) ?? null;
+
+  const docsPath = studentId
+    ? `/app/students/${studentId}/documents`
+    : '/app/documents';
+  const appsPath = studentId
+    ? `/app/students/${studentId}/applications`
+    : '/app/applications';
+
+  const notifications = useMemo(() => {
+    if (!data) return [] as DemoNotification[];
+    const items: DemoNotification[] = [];
+    for (const doc of data.documents) {
+      if (doc.status === 'REJECTED') {
+        items.push({
+          id: `rej-${doc.id}`,
+          title: `${doc.title} rejected`,
+          detail: doc.rejectionReason ?? 'Please re-upload a corrected file.',
+          tone: 'danger',
+          href: docsPath,
+        });
+      } else if (doc.status === 'NOT_UPLOADED') {
+        items.push({
+          id: `miss-${doc.id}`,
+          title: `${doc.title} missing`,
+          detail: 'Upload this document to keep your application moving.',
+          tone: 'gold',
+          href: docsPath,
+        });
+      } else if (doc.status === 'UNDER_REVIEW') {
+        items.push({
+          id: `rev-${doc.id}`,
+          title: `${doc.title} under review`,
+          detail: 'Waiting on consultant verification.',
+          tone: 'navy',
+          href: docsPath,
+        });
+      }
+    }
+    for (const d of data.deadlines.slice(0, 3)) {
+      const left = daysUntil(d.date);
+      items.push({
+        id: `due-${d.applicationId}-${d.label}`,
+        title: `${d.label} · ${d.university}`,
+        detail:
+          left == null
+            ? d.date
+            : left < 0
+              ? 'Passed'
+              : left === 0
+                ? 'Due today'
+                : `${left} days left`,
+        tone: 'gold',
+        href: appsPath,
+      });
+    }
+    if (openLiveCall) {
+      items.unshift({
+        id: `live-${openLiveCall.id}`,
+        title: 'Live consultation in progress',
+        detail: 'Open Calls to follow the transcript.',
+        tone: 'navy',
+        href: '/app/calls',
+      });
+    }
+    for (const note of data.recentCallNotes.slice(0, 2)) {
+      items.push({
+        id: `note-${note.id}`,
+        title: 'New consultation note',
+        detail: note.summary || note.followUps || 'Review the latest call summary.',
+        tone: 'navy',
+        href: '/app/calls',
+      });
+    }
+    return items.slice(0, 8);
+  }, [appsPath, data, docsPath, openLiveCall]);
 
   if (isLoading) return <HomeSkeleton />;
   if (error || !data) {
@@ -160,13 +247,6 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
     data.counts.pendingDocuments > 0 ||
     messages > 0;
 
-  const docsPath = studentId
-    ? `/app/students/${studentId}/documents`
-    : '/app/documents';
-  const appsPath = studentId
-    ? `/app/students/${studentId}/applications`
-    : '/app/applications';
-
   const consultant = data.student.consultant;
   const consultantInitial = consultant?.fullName?.[0] ?? 'C';
   const chipDue = nextDeadline ? formatShortDeadline(nextDeadline.date) : null;
@@ -191,7 +271,7 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
       </div>
 
       <SectionMotion index={0} className="relative mb-5">
-        <div className="mb-5 flex items-center justify-between">
+        <div className="relative mb-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <CrestMark size={36} />
             <div>
@@ -203,15 +283,108 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
               </p>
             </div>
           </div>
-          <TapButton
-            aria-label="Notifications"
-            className="ivy-card relative flex w-12 items-center justify-center text-foreground"
-          >
-            <Bell className="h-5 w-5" />
-            {hasUnread ? (
-              <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-gold shadow-[0_0_8px_rgba(212,175,55,0.7)] ring-2 ring-card" />
-            ) : null}
-          </TapButton>
+          <div className="relative">
+            <TapButton
+              aria-label="Notifications"
+              aria-expanded={notifOpen}
+              className="ivy-card relative flex w-12 items-center justify-center text-foreground"
+              onClick={() => setNotifOpen((v) => !v)}
+            >
+              <Bell className="h-5 w-5" />
+              {hasUnread || notifications.length > 0 ? (
+                <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-gold shadow-[0_0_8px_rgba(212,175,55,0.7)] ring-2 ring-card" />
+              ) : null}
+            </TapButton>
+
+            <AnimatePresence>
+              {notifOpen ? (
+                <>
+                  <button
+                    key="notif-scrim"
+                    type="button"
+                    aria-label="Close notifications"
+                    className="fixed inset-0 z-30 cursor-default"
+                    onClick={() => setNotifOpen(false)}
+                  />
+                  <motion.div
+                    key="notif-panel"
+                    initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                    transition={{ duration: 0.18 }}
+                    className="absolute right-0 top-14 z-40 w-[min(320px,calc(100vw-2.5rem))] overflow-hidden rounded-2xl border border-[rgba(120,53,15,0.12)] bg-card shadow-[0_18px_40px_-18px_rgba(11,21,40,0.4)]"
+                  >
+                    <div className="flex items-center justify-between border-b border-black/[0.06] px-3 py-2.5">
+                      <p className="label-caps tracking-[0.14em]">Inbox</p>
+                      <span className="text-[10px] font-bold text-muted-foreground">
+                        {notifications.length} item
+                        {notifications.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <ul className="no-scrollbar max-h-72 overflow-y-auto">
+                      {notifications.length === 0 ? (
+                        <li className="px-3 py-6 text-center text-sm font-semibold text-muted-foreground">
+                          You&apos;re all caught up.
+                        </li>
+                      ) : (
+                        notifications.map((n) => (
+                          <li key={n.id} className="border-b border-black/[0.05] last:border-0">
+                            <button
+                              type="button"
+                              className="flex w-full items-start gap-2.5 px-3 py-3 text-left transition-colors hover:bg-secondary/80"
+                              onClick={() => {
+                                setNotifOpen(false);
+                                navigate(n.href);
+                              }}
+                            >
+                              <span
+                                className={cn(
+                                  'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
+                                  n.tone === 'danger' &&
+                                    'bg-destructive-soft text-destructive',
+                                  n.tone === 'gold' &&
+                                    'bg-gold-soft text-gold-ink',
+                                  n.tone === 'navy' &&
+                                    'bg-[#0B1528] text-gold',
+                                )}
+                              >
+                                {n.tone === 'danger' ? (
+                                  <AlertTriangle className="h-3.5 w-3.5" />
+                                ) : n.tone === 'gold' ? (
+                                  <CalendarDays className="h-3.5 w-3.5" />
+                                ) : (
+                                  <FileText className="h-3.5 w-3.5" />
+                                )}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-semibold text-foreground">
+                                  {n.title}
+                                </span>
+                                <span className="mt-0.5 block text-xs font-semibold text-muted-foreground">
+                                  {n.detail}
+                                </span>
+                              </span>
+                            </button>
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                    {notifications.length > 0 ? (
+                      <div className="border-t border-black/[0.06] px-3 py-2">
+                        <Link
+                          to={docsPath}
+                          onClick={() => setNotifOpen(false)}
+                          className="inline-flex min-h-10 items-center text-xs font-bold text-gold-ink"
+                        >
+                          Open documents →
+                        </Link>
+                      </div>
+                    ) : null}
+                  </motion.div>
+                </>
+              ) : null}
+            </AnimatePresence>
+          </div>
         </div>
 
         <p className="font-mono text-[10px] font-semibold tracking-[0.25em] text-gold-ink">

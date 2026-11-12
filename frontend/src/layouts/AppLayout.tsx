@@ -23,7 +23,7 @@ export function AppLayout() {
       <main
         className={cn(
           'no-scrollbar relative flex-1 overflow-y-auto px-5 pt-8',
-          isLiveCall ? 'pb-4' : 'pb-28',
+          isLiveCall ? 'pb-4' : 'pb-40',
         )}
       >
         <Outlet />

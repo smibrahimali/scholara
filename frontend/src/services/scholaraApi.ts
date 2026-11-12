@@ -78,12 +78,11 @@ export async function fetchApplication(id: string) {
 export async function updateApplicationStep(
   applicationId: string,
   stepNumber: number,
-  status: string,
-  notes?: string,
+  payload: { status?: string; notes?: string },
 ) {
   const { data } = await api.patch<ApplicationItem>(
     `/applications/${applicationId}/steps/${stepNumber}`,
-    { status, notes },
+    payload,
   );
   return data;
 }

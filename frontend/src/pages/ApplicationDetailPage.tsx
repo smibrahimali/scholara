@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ArrowLeft, Mail } from 'lucide-react';
-import { AdmissionTimeline } from '../components/AdmissionTimeline';
+import {
+  AdmissionTimeline,
+  type AdmissionTimelineStep,
+} from '../components/AdmissionTimeline';
 import { PageMotion } from '../components/ivy/PageMotion';
 import { ScreenTitle } from '../components/ivy/ScreenTitle';
 import { TapButton } from '../components/ivy/TapButton';
@@ -15,11 +18,68 @@ import {
   updateApplicationStep,
 } from '../services/scholaraApi';
 
+function DetailStepNotes({
+  applicationId,
+  stepNumber,
+  notes,
+}: {
+  applicationId: string;
+  stepNumber: number;
+  notes: string | null;
+}) {
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState(notes ?? '');
+
+  useEffect(() => {
+    setDraft(notes ?? '');
+  }, [notes, stepNumber]);
+
+  const mutation = useMutation({
+    mutationFn: (value: string) =>
+      updateApplicationStep(applicationId, stepNumber, { notes: value }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['application', applicationId], updated);
+      void queryClient.invalidateQueries({
+        queryKey: ['applications'],
+        refetchType: 'none',
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['dashboard'],
+        refetchType: 'none',
+      });
+      toast.success('Notes saved');
+    },
+    onError: () => toast.error('Could not save notes'),
+  });
+
+  const dirty = draft !== (notes ?? '');
+
+  return (
+    <div className="space-y-2">
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        rows={3}
+        placeholder="Add notes for this step…"
+        className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground outline-none ring-gold/40 placeholder:font-medium placeholder:text-muted-foreground focus:ring-2"
+      />
+      <TapButton
+        disabled={!dirty || mutation.isPending}
+        onClick={() => mutation.mutate(draft.trim())}
+        className="flex w-full items-center justify-center rounded-xl border border-border bg-card text-sm font-semibold disabled:opacity-50"
+      >
+        {mutation.isPending ? 'Saving…' : 'Save notes'}
+      </TapButton>
+    </div>
+  );
+}
+
 export function ApplicationDetailPage() {
   const { id = '', studentId } = useParams();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const canEdit = user?.role === 'CONSULTANT';
+  const canMarkComplete = user?.role === 'CONSULTANT';
+  const canEditNotes = user?.role === 'CONSULTANT';
   const celebratedRef = useRef(false);
 
   const { data, isLoading, error } = useQuery({
@@ -42,12 +102,18 @@ export function ApplicationDetailPage() {
     }: {
       stepNumber: number;
       status: string;
-    }) => updateApplicationStep(id, stepNumber, status),
-    onSuccess: () => {
+    }) => updateApplicationStep(id, stepNumber, { status }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['application', id], updated);
+      void queryClient.invalidateQueries({
+        queryKey: ['applications'],
+        refetchType: 'none',
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['dashboard'],
+        refetchType: 'none',
+      });
       toast.success('Step updated');
-      void queryClient.invalidateQueries({ queryKey: ['application', id] });
-      void queryClient.invalidateQueries({ queryKey: ['applications'] });
-      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
     onError: () => toast.error('Could not update step'),
   });
@@ -68,6 +134,9 @@ export function ApplicationDetailPage() {
     : '/app/applications';
   const consultantName =
     data.student?.consultant?.user.fullName ?? 'Assigned consultant';
+  const notesByStep = new Map(
+    (data.steps ?? []).map((s) => [s.stepNumber, s.notes] as const),
+  );
 
   return (
     <PageMotion>
@@ -129,26 +198,33 @@ export function ApplicationDetailPage() {
             step.status === 'COMPLETED' || step.status === 'IN_PROGRESS'
               ? consultantName
               : null,
-          note: step.notes,
+          note: canEditNotes ? null : step.notes,
         }))}
-        renderStepAction={
-          canEdit
-            ? (step) =>
-                step.status !== 'Done' && step.status !== 'Skipped' ? (
-                  <TapButton
-                    className="mt-2 flex w-full items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground"
-                    onClick={() =>
-                      stepMutation.mutate({
-                        stepNumber: step.stepNumber,
-                        status: 'COMPLETED',
-                      })
-                    }
-                  >
-                    Mark complete
-                  </TapButton>
-                ) : null
-            : undefined
-        }
+        renderStepAction={(step: AdmissionTimelineStep) => (
+          <div className="space-y-2">
+            {canEditNotes ? (
+              <DetailStepNotes
+                applicationId={id}
+                stepNumber={step.stepNumber}
+                notes={notesByStep.get(step.stepNumber) ?? null}
+              />
+            ) : null}
+            {canMarkComplete && step.status === 'Current' ? (
+              <TapButton
+                className="flex w-full items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground"
+                disabled={stepMutation.isPending}
+                onClick={() =>
+                  stepMutation.mutate({
+                    stepNumber: step.stepNumber,
+                    status: 'COMPLETED',
+                  })
+                }
+              >
+                {stepMutation.isPending ? 'Updating…' : 'Mark complete'}
+              </TapButton>
+            ) : null}
+          </div>
+        )}
       />
 
       <div className="mt-8 space-y-3">

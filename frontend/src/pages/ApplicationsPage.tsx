@@ -1,30 +1,112 @@
-import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check, ChevronDown } from 'lucide-react';
+import { toast } from 'sonner';
 import { PageMotion } from '../components/ivy/PageMotion';
 import { ScreenTitle } from '../components/ivy/ScreenTitle';
 import { TapButton } from '../components/ivy/TapButton';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/cn';
 import { formatDisplayDate } from '../lib/statusMaps';
-import { fetchApplication, fetchApplications } from '../services/scholaraApi';
-import type { ApplicationItem } from '../types/domain';
+import {
+  fetchApplication,
+  fetchApplications,
+  updateApplicationStep,
+} from '../services/scholaraApi';
+import type { ApplicationItem, ApplicationStep } from '../types/domain';
 
-function stepState(
-  status: string,
-): 'done' | 'current' | 'future' {
+function stepState(status: string): 'done' | 'current' | 'future' {
   if (status === 'COMPLETED') return 'done';
   if (status === 'IN_PROGRESS') return 'current';
   return 'future';
 }
 
+function StepNotesPanel({
+  applicationId,
+  step,
+  canEdit,
+}: {
+  applicationId: string;
+  step: ApplicationStep;
+  canEdit: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState(step.notes ?? '');
+
+  useEffect(() => {
+    setDraft(step.notes ?? '');
+  }, [step.id, step.notes]);
+
+  const mutation = useMutation({
+    mutationFn: (notes: string) =>
+      updateApplicationStep(applicationId, step.stepNumber, { notes }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['application', applicationId], updated);
+      void queryClient.invalidateQueries({
+        queryKey: ['applications'],
+        refetchType: 'none',
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['dashboard'],
+        refetchType: 'none',
+      });
+      toast.success('Notes saved');
+    },
+    onError: () => toast.error('Could not save notes'),
+  });
+
+  const dirty = draft !== (step.notes ?? '');
+
+  if (!canEdit) {
+    return (
+      <div className="mb-3 rounded-xl border border-border bg-card p-3 text-sm text-muted-foreground">
+        {step.notes?.trim() ? step.notes : 'No notes for this step yet.'}
+        {step.completedAt ? (
+          <span className="mt-1 block text-xs font-semibold text-foreground">
+            {formatDisplayDate(step.completedAt)}
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-3 space-y-2 rounded-xl border border-border bg-card p-3">
+      <label className="block text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+        Step notes
+      </label>
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        rows={3}
+        placeholder="Add notes for this step…"
+        className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground outline-none ring-gold/40 placeholder:font-medium placeholder:text-muted-foreground focus:ring-2"
+      />
+      {step.completedAt ? (
+        <span className="block text-xs font-semibold text-foreground">
+          {formatDisplayDate(step.completedAt)}
+        </span>
+      ) : null}
+      <TapButton
+        disabled={!dirty || mutation.isPending}
+        onClick={() => mutation.mutate(draft.trim())}
+        className="flex w-full items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-50"
+      >
+        {mutation.isPending ? 'Saving…' : 'Save notes'}
+      </TapButton>
+    </div>
+  );
+}
+
 function JourneyTimeline({
   application,
+  canEditNotes,
   onOpenDetail,
 }: {
   application: ApplicationItem;
+  canEditNotes: boolean;
   onOpenDetail: () => void;
 }) {
   const steps = [...(application.steps ?? [])].sort(
@@ -51,10 +133,8 @@ function JourneyTimeline({
           {Math.max(steps.length, 12)}
         </span>
         <span className="font-semibold">
-          {steps.length
-            ? Math.round((doneCount / steps.length) * 100)
-            : 0}
-          % complete
+          {steps.length ? Math.round((doneCount / steps.length) * 100) : 0}%
+          complete
         </span>
       </div>
 
@@ -115,7 +195,9 @@ function JourneyTimeline({
                   <span
                     className={cn(
                       'text-xs',
-                      state === 'current' ? 'text-gold-ink' : 'text-muted-foreground',
+                      state === 'current'
+                        ? 'text-gold-ink'
+                        : 'text-muted-foreground',
                     )}
                   >
                     {state === 'current'
@@ -137,14 +219,11 @@ function JourneyTimeline({
                     exit={{ height: 0, opacity: 0 }}
                     className="overflow-hidden"
                   >
-                    <div className="mb-3 rounded-xl border border-border bg-card p-3 text-sm text-muted-foreground">
-                      {s.notes ?? 'No notes for this step yet.'}
-                      {s.completedAt ? (
-                        <span className="mt-1 block text-xs font-semibold text-foreground">
-                          {formatDisplayDate(s.completedAt)}
-                        </span>
-                      ) : null}
-                    </div>
+                    <StepNotesPanel
+                      applicationId={application.id}
+                      step={s}
+                      canEdit={canEditNotes}
+                    />
                   </motion.div>
                 ) : null}
               </AnimatePresence>
@@ -167,6 +246,7 @@ export function ApplicationsPage({ studentId }: { studentId?: string }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const canEditNotes = user?.role === 'CONSULTANT';
 
   const listQuery = useQuery({
     queryKey: ['applications', studentId ?? user?.id],
@@ -229,6 +309,7 @@ export function ApplicationsPage({ studentId }: { studentId?: string }) {
       ) : detailQuery.data ? (
         <JourneyTimeline
           application={detailQuery.data}
+          canEditNotes={canEditNotes}
           onOpenDetail={() =>
             navigate(
               studentId

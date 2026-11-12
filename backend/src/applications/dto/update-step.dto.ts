@@ -1,11 +1,12 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { ApplicationStepStatus } from '../../common/enums';
 
 export class UpdateStepDto {
-  @ApiProperty({ enum: ApplicationStepStatus })
+  @ApiPropertyOptional({ enum: ApplicationStepStatus })
+  @IsOptional()
   @IsEnum(ApplicationStepStatus)
-  status!: ApplicationStepStatus;
+  status?: ApplicationStepStatus;
 
   @ApiPropertyOptional()
   @IsOptional()

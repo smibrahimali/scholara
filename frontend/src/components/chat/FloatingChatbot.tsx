@@ -83,7 +83,7 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.98 }}
             transition={{ duration: 0.2 }}
-            className="absolute bottom-40 right-3 z-[60] flex h-[min(420px,58dvh)] w-[min(340px,calc(100%-1.5rem))] flex-col overflow-hidden rounded-2xl border border-[rgba(120,53,15,0.12)] bg-card shadow-[0_18px_40px_-18px_rgba(11,21,40,0.45)]"
+            className="absolute bottom-40 right-4 z-[60] flex h-[min(420px,58dvh)] w-[min(340px,calc(100%-2rem))] flex-col overflow-hidden rounded-2xl border border-[rgba(120,53,15,0.12)] bg-card shadow-[0_18px_40px_-18px_rgba(11,21,40,0.45)]"
           >
             <header className="flex items-center gap-2 border-b border-black/[0.06] bg-[#0B1528] px-3 py-3 text-primary-foreground">
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gold/20 text-gold">
@@ -94,7 +94,9 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
                   Scholara Assistant
                 </p>
                 <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-gold">
-                  Groq · admissions help
+                  {studentId
+                    ? 'Groq · this student file'
+                    : 'Groq · admissions help'}
                 </p>
               </div>
               <TapButton
@@ -123,12 +125,22 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
               {!messagesQuery.isLoading && messages.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-[rgba(120,53,15,0.15)] bg-gold-soft/40 px-3 py-4 text-center">
                   <p className="font-serif text-sm font-semibold text-foreground">
-                    Ask about your admissions journey
+                    {studentId
+                      ? 'Ask about this student file'
+                      : 'Ask about your admissions journey'}
                   </p>
                   <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                    Documents, deadlines, steps, or what to do next.
+                    {studentId
+                      ? 'Documents, deadlines, steps, or outreach next steps.'
+                      : 'Documents, deadlines, steps, or what to do next.'}
                   </p>
                 </div>
+              ) : null}
+              {studentId && messages.length > 0 ? (
+                <p className="rounded-lg bg-secondary/80 px-2.5 py-1.5 text-[10px] font-semibold text-muted-foreground">
+                  Context is this student. Chat history is yours across dossiers —
+                  clear if switching topics.
+                </p>
               ) : null}
               {messages.map((msg) => (
                 <ChatBubble key={msg.id} message={msg} />
@@ -177,7 +189,7 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
         aria-label={open ? 'Close assistant' : 'Open Scholara assistant'}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'absolute bottom-24 right-3 z-[60] flex h-14 w-14 items-center justify-center rounded-full shadow-[0_10px_28px_-8px_rgba(212,175,55,0.55)]',
+          'absolute bottom-24 right-4 z-[60] flex h-14 w-14 items-center justify-center rounded-full shadow-[0_10px_28px_-8px_rgba(212,175,55,0.55)]',
           open
             ? 'bg-[#0B1528] text-gold'
             : 'btn-metallic text-[#0B1528]',

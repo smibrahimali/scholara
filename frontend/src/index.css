@@ -61,7 +61,8 @@
   h4 {
     font-family: var(--font-serif);
     margin: 0;
-    color: var(--foreground);
+    /* Inherit so parent utilities (e.g. text-primary-foreground on dark cards) win */
+    color: inherit;
   }
 
   a {

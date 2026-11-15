@@ -21,6 +21,7 @@ import { TapButton } from '../components/ivy/TapButton';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/cn';
 import { fetchCalls, fetchDashboard } from '../services/scholaraApi';
+import { fetchOpenChatSession } from '../services/messagingApi';
 import type { ApplicationStep, DocumentItem } from '../types/domain';
 
 type DemoNotification = {
@@ -123,6 +124,8 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [notifOpen, setNotifOpen] = useState(false);
+  const isConsultantDossier =
+    Boolean(studentId) && user?.role === 'CONSULTANT';
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboard', studentId ?? user?.id],
     queryFn: () => fetchDashboard(studentId),
@@ -134,9 +137,17 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
     enabled: Boolean(user),
   });
 
+  const openChatQuery = useQuery({
+    queryKey: ['chat-session-open', studentId ?? 'self'],
+    queryFn: () => fetchOpenChatSession(studentId),
+    refetchInterval: 5000,
+    enabled: Boolean(user),
+  });
+
   const greeting = useMemo(() => greetingForNow(), []);
   const openLiveCall =
     callsQuery.data?.find((call) => !call.endedAt) ?? null;
+  const openChat = openChatQuery.data ?? null;
 
   const docsPath = studentId
     ? `/app/students/${studentId}/documents`
@@ -144,6 +155,12 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
   const appsPath = studentId
     ? `/app/students/${studentId}/applications`
     : '/app/applications';
+  const callsPath = studentId
+    ? `/app/students/${studentId}/calls`
+    : '/app/consultant';
+  const messagesPath = studentId
+    ? `/app/students/${studentId}/messages`
+    : '/app/messages';
 
   const notifications = useMemo(() => {
     if (!data) return [] as DemoNotification[];
@@ -153,7 +170,10 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
         items.push({
           id: `rej-${doc.id}`,
           title: `${doc.title} rejected`,
-          detail: doc.rejectionReason ?? 'Please re-upload a corrected file.',
+          detail: isConsultantDossier
+            ? (doc.rejectionReason ??
+              'Student needs to re-upload a corrected file.')
+            : (doc.rejectionReason ?? 'Please re-upload a corrected file.'),
           tone: 'danger',
           href: docsPath,
         });
@@ -161,7 +181,9 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
         items.push({
           id: `miss-${doc.id}`,
           title: `${doc.title} missing`,
-          detail: 'Upload this document to keep your application moving.',
+          detail: isConsultantDossier
+            ? 'Waiting on the student to upload this document.'
+            : 'Upload this document to keep your application moving.',
           tone: 'gold',
           href: docsPath,
         });
@@ -169,7 +191,9 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
         items.push({
           id: `rev-${doc.id}`,
           title: `${doc.title} under review`,
-          detail: 'Waiting on consultant verification.',
+          detail: isConsultantDossier
+            ? 'Ready for your verification.'
+            : 'Waiting on consultant verification.',
           tone: 'navy',
           href: docsPath,
         });
@@ -196,9 +220,24 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
       items.unshift({
         id: `live-${openLiveCall.id}`,
         title: 'Live consultation in progress',
-        detail: 'Open Calls to follow the transcript.',
+        detail: isConsultantDossier
+          ? 'Open the live call room for this student.'
+          : 'Open Calls to follow the transcript.',
         tone: 'navy',
-        href: '/app/calls',
+        href: isConsultantDossier
+          ? `/app/live-call/${openLiveCall.id}`
+          : '/app/calls',
+      });
+    }
+    if (openChat) {
+      items.unshift({
+        id: `chat-${openChat.id}`,
+        title: 'Encrypted chat in progress',
+        detail: isConsultantDossier
+          ? 'Open the ephemeral chat room for this student.'
+          : 'Join the private chat with your consultant.',
+        tone: 'gold',
+        href: messagesPath,
       });
     }
     for (const note of data.recentCallNotes.slice(0, 2)) {
@@ -207,11 +246,20 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
         title: 'New consultation note',
         detail: note.summary || note.followUps || 'Review the latest call summary.',
         tone: 'navy',
-        href: '/app/calls',
+        href: callsPath,
       });
     }
     return items.slice(0, 8);
-  }, [appsPath, data, docsPath, openLiveCall]);
+  }, [
+    appsPath,
+    callsPath,
+    data,
+    docsPath,
+    isConsultantDossier,
+    messagesPath,
+    openChat,
+    openLiveCall,
+  ]);
 
   if (isLoading) return <HomeSkeleton />;
   if (error || !data) {
@@ -262,7 +310,7 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
     <div className="relative">
       <div
         aria-hidden
-        className="pointer-events-none absolute -left-5 -right-5 -top-8 h-[280px] overflow-hidden"
+        className="pointer-events-none absolute -left-5 -right-5 -top-6 h-[280px] overflow-hidden"
       >
         <div className="ivy-ambient absolute inset-0" />
         <div className="absolute -right-8 top-0 opacity-[0.1]">
@@ -270,8 +318,8 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
         </div>
       </div>
 
-      <SectionMotion index={0} className="relative mb-5">
-        <div className="relative mb-5 flex items-center justify-between">
+      <SectionMotion index={0} className="relative mb-6">
+        <div className="relative mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <CrestMark size={36} />
             <div>
@@ -283,129 +331,140 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
               </p>
             </div>
           </div>
-          <div className="relative">
-            <TapButton
-              aria-label="Notifications"
-              aria-expanded={notifOpen}
-              className="ivy-card relative flex w-12 items-center justify-center text-foreground"
-              onClick={() => setNotifOpen((v) => !v)}
-            >
-              <Bell className="h-5 w-5" />
-              {hasUnread || notifications.length > 0 ? (
-                <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-gold shadow-[0_0_8px_rgba(212,175,55,0.7)] ring-2 ring-card" />
-              ) : null}
-            </TapButton>
+          {!isConsultantDossier ? (
+            <div className="relative">
+              <TapButton
+                aria-label="Notifications"
+                aria-expanded={notifOpen}
+                className="ivy-card relative flex w-12 items-center justify-center text-foreground"
+                onClick={() => setNotifOpen((v) => !v)}
+              >
+                <Bell className="h-5 w-5" />
+                {hasUnread || notifications.length > 0 ? (
+                  <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-gold shadow-[0_0_8px_rgba(212,175,55,0.7)] ring-2 ring-card" />
+                ) : null}
+              </TapButton>
 
-            <AnimatePresence>
-              {notifOpen ? (
-                <>
-                  <button
-                    key="notif-scrim"
-                    type="button"
-                    aria-label="Close notifications"
-                    className="fixed inset-0 z-30 cursor-default"
-                    onClick={() => setNotifOpen(false)}
-                  />
-                  <motion.div
-                    key="notif-panel"
-                    initial={{ opacity: 0, y: -6, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -4, scale: 0.98 }}
-                    transition={{ duration: 0.18 }}
-                    className="absolute right-0 top-14 z-40 w-[min(320px,calc(100vw-2.5rem))] overflow-hidden rounded-2xl border border-[rgba(120,53,15,0.12)] bg-card shadow-[0_18px_40px_-18px_rgba(11,21,40,0.4)]"
-                  >
-                    <div className="flex items-center justify-between border-b border-black/[0.06] px-3 py-2.5">
-                      <p className="label-caps tracking-[0.14em]">Inbox</p>
-                      <span className="text-[10px] font-bold text-muted-foreground">
-                        {notifications.length} item
-                        {notifications.length === 1 ? '' : 's'}
-                      </span>
-                    </div>
-                    <ul className="no-scrollbar max-h-72 overflow-y-auto">
-                      {notifications.length === 0 ? (
-                        <li className="px-3 py-6 text-center text-sm font-semibold text-muted-foreground">
-                          You&apos;re all caught up.
-                        </li>
-                      ) : (
-                        notifications.map((n) => (
-                          <li key={n.id} className="border-b border-black/[0.05] last:border-0">
-                            <button
-                              type="button"
-                              className="flex w-full items-start gap-2.5 px-3 py-3 text-left transition-colors hover:bg-secondary/80"
-                              onClick={() => {
-                                setNotifOpen(false);
-                                navigate(n.href);
-                              }}
-                            >
-                              <span
-                                className={cn(
-                                  'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
-                                  n.tone === 'danger' &&
-                                    'bg-destructive-soft text-destructive',
-                                  n.tone === 'gold' &&
-                                    'bg-gold-soft text-gold-ink',
-                                  n.tone === 'navy' &&
-                                    'bg-[#0B1528] text-gold',
-                                )}
-                              >
-                                {n.tone === 'danger' ? (
-                                  <AlertTriangle className="h-3.5 w-3.5" />
-                                ) : n.tone === 'gold' ? (
-                                  <CalendarDays className="h-3.5 w-3.5" />
-                                ) : (
-                                  <FileText className="h-3.5 w-3.5" />
-                                )}
-                              </span>
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-sm font-semibold text-foreground">
-                                  {n.title}
-                                </span>
-                                <span className="mt-0.5 block text-xs font-semibold text-muted-foreground">
-                                  {n.detail}
-                                </span>
-                              </span>
-                            </button>
-                          </li>
-                        ))
-                      )}
-                    </ul>
-                    {notifications.length > 0 ? (
-                      <div className="border-t border-black/[0.06] px-3 py-2">
-                        <Link
-                          to={docsPath}
-                          onClick={() => setNotifOpen(false)}
-                          className="inline-flex min-h-10 items-center text-xs font-bold text-gold-ink"
-                        >
-                          Open documents →
-                        </Link>
+              <AnimatePresence>
+                {notifOpen ? (
+                  <>
+                    <button
+                      key="notif-scrim"
+                      type="button"
+                      aria-label="Close notifications"
+                      className="fixed inset-0 z-30 cursor-default"
+                      onClick={() => setNotifOpen(false)}
+                    />
+                    <motion.div
+                      key="notif-panel"
+                      initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                      transition={{ duration: 0.18 }}
+                      className="absolute right-0 top-14 z-40 w-[min(320px,calc(100vw-2.5rem))] overflow-hidden rounded-2xl border border-[rgba(120,53,15,0.12)] bg-card shadow-[0_18px_40px_-18px_rgba(11,21,40,0.4)]"
+                    >
+                      <div className="flex items-center justify-between border-b border-black/[0.06] px-3 py-2.5">
+                        <p className="label-caps tracking-[0.14em]">Inbox</p>
+                        <span className="text-[10px] font-bold text-muted-foreground">
+                          {notifications.length} item
+                          {notifications.length === 1 ? '' : 's'}
+                        </span>
                       </div>
-                    ) : null}
-                  </motion.div>
-                </>
-              ) : null}
-            </AnimatePresence>
-          </div>
+                      <ul className="no-scrollbar max-h-72 overflow-y-auto">
+                        {notifications.length === 0 ? (
+                          <li className="px-3 py-6 text-center text-sm font-semibold text-muted-foreground">
+                            You&apos;re all caught up.
+                          </li>
+                        ) : (
+                          notifications.map((n) => (
+                            <li
+                              key={n.id}
+                              className="border-b border-black/[0.05] last:border-0"
+                            >
+                              <button
+                                type="button"
+                                className="flex w-full items-start gap-2.5 px-3 py-3 text-left transition-colors hover:bg-secondary/80"
+                                onClick={() => {
+                                  setNotifOpen(false);
+                                  navigate(n.href);
+                                }}
+                              >
+                                <span
+                                  className={cn(
+                                    'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
+                                    n.tone === 'danger' &&
+                                      'bg-destructive-soft text-destructive',
+                                    n.tone === 'gold' &&
+                                      'bg-gold-soft text-gold-ink',
+                                    n.tone === 'navy' &&
+                                      'bg-[#0B1528] text-gold',
+                                  )}
+                                >
+                                  {n.tone === 'danger' ? (
+                                    <AlertTriangle className="h-3.5 w-3.5" />
+                                  ) : n.tone === 'gold' ? (
+                                    <CalendarDays className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <FileText className="h-3.5 w-3.5" />
+                                  )}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-sm font-semibold text-foreground">
+                                    {n.title}
+                                  </span>
+                                  <span className="mt-0.5 block text-xs font-semibold text-muted-foreground">
+                                    {n.detail}
+                                  </span>
+                                </span>
+                              </button>
+                            </li>
+                          ))
+                        )}
+                      </ul>
+                      {notifications.length > 0 ? (
+                        <div className="border-t border-black/[0.06] px-3 py-2">
+                          <Link
+                            to={docsPath}
+                            onClick={() => setNotifOpen(false)}
+                            className="inline-flex min-h-10 items-center text-xs font-bold text-gold-ink"
+                          >
+                            Open documents →
+                          </Link>
+                        </div>
+                      ) : null}
+                    </motion.div>
+                  </>
+                ) : null}
+              </AnimatePresence>
+            </div>
+          ) : null}
         </div>
 
         <p className="font-mono text-[10px] font-semibold tracking-[0.25em] text-gold-ink">
           OFFICIAL FILE · {fileCode}
         </p>
         <p className="label-caps mt-3">
-          {data.readOnly ? 'Guardian view,' : greeting}
+          {isConsultantDossier
+            ? 'Student dossier,'
+            : data.readOnly
+              ? 'Guardian view,'
+              : greeting}
         </p>
         <h1 className="mt-1 font-serif text-[34px] font-semibold leading-none text-foreground">
-          {firstName}
+          {isConsultantDossier ? data.student.fullName : firstName}
         </h1>
         <p className="mt-2 font-serif text-sm italic text-muted-foreground">
-          “Education is the passport to the future.”
+          {isConsultantDossier
+            ? 'Assigned file — review progress, documents, and outreach.'
+            : '“Education is the passport to the future.”'}
         </p>
-        <HeraldicDivider className="mt-3" />
+        <HeraldicDivider className="mt-4" />
       </SectionMotion>
 
       {primary ? (
-        <SectionMotion index={1} className="relative mt-6">
+        <SectionMotion index={1} className="relative mt-8">
           <div
-            className="hero-midnight relative overflow-hidden rounded-2xl border p-5 text-primary-foreground"
+            className="hero-midnight relative overflow-hidden rounded-2xl border p-6 text-primary-foreground"
             style={{ borderColor: 'rgba(251, 191, 36, 0.3)' }}
           >
             <div
@@ -434,12 +493,14 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
               <ProgressRing done={ringDone} total={totalSteps} />
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gold">
-                  Your Application Journey
+                  {isConsultantDossier
+                    ? 'Application progress'
+                    : 'Your Application Journey'}
                 </p>
-                <h2 className="mt-1 font-serif text-lg font-semibold leading-snug">
+                <h2 className="mt-1 truncate font-serif text-lg font-semibold leading-snug text-primary-foreground">
                   {primary.university.name}
                 </h2>
-                <p className="mt-0.5 text-xs text-white/85">
+                <p className="mt-1 text-xs font-medium text-primary-foreground/65">
                   {primary.program.name}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-[5px]">
@@ -469,14 +530,17 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
               onClick={() => navigate(appsPath)}
               className="btn-metallic shimmer-sweep relative mt-5 flex w-full items-center justify-center gap-2 rounded-xl"
             >
-              Continue Your Journey <ArrowRight className="h-4 w-4" />
+              {isConsultantDossier
+                ? 'Open applications'
+                : 'Continue Your Journey'}{' '}
+              <ArrowRight className="h-4 w-4" />
             </TapButton>
           </div>
         </SectionMotion>
       ) : null}
 
       {/* Metric ribbon */}
-      <SectionMotion index={2} className="mt-4 grid grid-cols-3 gap-2">
+      <SectionMotion index={2} className="mt-6 grid grid-cols-3 gap-2 sm:gap-3">
         {[
           { value: daysLabel, label: daysSub },
           { value: 'Competitive', label: 'Counselor Vetted' },
@@ -487,33 +551,33 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
         ].map((pill) => (
           <div
             key={pill.label}
-            className="rounded-full border bg-card px-2 py-2.5 text-center"
+            className="min-w-0 rounded-full border bg-card px-1.5 py-2.5 text-center"
             style={{
               borderColor: 'color-mix(in oklab, var(--gold) 45%, transparent)',
               boxShadow:
                 '0 1px 0 0 rgba(255,255,255,0.85) inset, 0 6px 14px -8px rgba(20,28,45,0.08)',
             }}
           >
-            <p className="font-serif text-sm font-semibold leading-tight text-foreground">
+            <p className="truncate font-serif text-sm font-semibold leading-tight text-foreground">
               {pill.value}
             </p>
-            <p className="mt-0.5 text-[8px] font-bold uppercase tracking-[0.1em] text-gold-ink">
+            <p className="mt-0.5 truncate text-[8px] font-bold uppercase tracking-[0.08em] text-gold-ink">
               {pill.label}
             </p>
           </div>
         ))}
       </SectionMotion>
 
-      {openLiveCall && !studentId ? (
-        <SectionMotion index={2} className="mt-5">
-          <div className="rounded-2xl border border-success/30 bg-success/10 p-4">
+      {openLiveCall && !isConsultantDossier ? (
+        <SectionMotion index={2} className="mt-6">
+          <div className="rounded-2xl border border-success/30 bg-success/10 p-5">
             <p className="font-semibold text-foreground">Live call waiting</p>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1.5 text-sm text-muted-foreground">
               Your consultant is on a call. Join to speak — transcription runs
               automatically.
             </p>
             <TapButton
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground"
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground"
               onClick={() => navigate(`/app/live-call/${openLiveCall.id}`)}
             >
               <Phone className="h-4 w-4" /> Join live call
@@ -522,9 +586,78 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
         </SectionMotion>
       ) : null}
 
-      {consultant ? (
-        <SectionMotion index={3} className="mt-5">
-          <div className="ivy-card flex items-center gap-3 p-4">
+      {openChat && !isConsultantDossier ? (
+        <SectionMotion index={2} className="mt-6">
+          <div className="rounded-2xl border border-gold/35 bg-gold-soft/50 p-5">
+            <p className="font-semibold text-foreground">Encrypted chat waiting</p>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              Your consultant opened a private room. Messages clear when the
+              chat ends.
+            </p>
+            <TapButton
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground"
+              onClick={() => navigate(messagesPath)}
+            >
+              <MessageCircle className="h-4 w-4" /> Join encrypted chat
+            </TapButton>
+          </div>
+        </SectionMotion>
+      ) : null}
+
+      {openLiveCall && isConsultantDossier ? (
+        <SectionMotion index={2} className="mt-6">
+          <div className="rounded-2xl border border-success/30 bg-success/10 p-5">
+            <p className="font-semibold text-foreground">Live call open</p>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              A consultation room is open for this student.
+            </p>
+            <TapButton
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground"
+              onClick={() => navigate(`/app/live-call/${openLiveCall.id}`)}
+            >
+              <Phone className="h-4 w-4" /> Open live call
+            </TapButton>
+          </div>
+        </SectionMotion>
+      ) : null}
+
+      {isConsultantDossier ? (
+        <SectionMotion index={3} className="mt-6">
+          <div className="ivy-card p-5">
+            <p className="label-caps">Outreach</p>
+            <p className="mt-1 font-serif text-lg font-semibold text-foreground">
+              Contact {firstName}
+            </p>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              Message or manage calls for this assigned student.
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <TapButton
+                aria-label="Message student"
+                className="btn-metallic flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold"
+                onClick={() => navigate(messagesPath)}
+              >
+                <MessageCircle className="h-4 w-4" /> Message
+              </TapButton>
+              <TapButton
+                aria-label="Student calls"
+                className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card py-3 text-sm font-semibold text-foreground"
+                onClick={() => {
+                  if (openLiveCall) {
+                    navigate(`/app/live-call/${openLiveCall.id}`);
+                    return;
+                  }
+                  navigate(callsPath);
+                }}
+              >
+                <Phone className="h-4 w-4" /> Calls
+              </TapButton>
+            </div>
+          </div>
+        </SectionMotion>
+      ) : consultant ? (
+        <SectionMotion index={3} className="mt-6">
+          <div className="ivy-card flex items-center gap-3 p-5">
             <span className="relative flex h-12 w-12 items-center justify-center rounded-full border-2 border-gold bg-[#0B1528] font-serif text-lg text-primary-foreground">
               {consultantInitial}
               <span className="absolute bottom-0.5 right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card bg-success shadow-[0_0_6px_rgba(31,122,77,0.6)]" />
@@ -533,20 +666,14 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
               <p className="truncate font-serif text-lg font-semibold text-foreground">
                 {consultant.fullName}
               </p>
-              <p className="text-xs font-semibold text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 {consultant.title ?? 'Admissions Consultant'}
               </p>
             </div>
             <TapButton
               aria-label="Message consultant"
               className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-gold-ink shadow-[inset_0_0_0_1px_rgba(120,53,15,0.12)]"
-              onClick={() =>
-                navigate(
-                  studentId
-                    ? `/app/students/${studentId}/calls`
-                    : '/app/consultant',
-                )
-              }
+              onClick={() => navigate(messagesPath)}
             >
               <MessageCircle className="h-4 w-4" />
             </TapButton>
@@ -554,15 +681,11 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
               aria-label="Call consultant"
               className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-gold-ink shadow-[inset_0_0_0_1px_rgba(120,53,15,0.12)]"
               onClick={() => {
-                if (openLiveCall && !studentId) {
+                if (openLiveCall) {
                   navigate(`/app/live-call/${openLiveCall.id}`);
                   return;
                 }
-                navigate(
-                  studentId
-                    ? `/app/students/${studentId}/calls`
-                    : '/app/consultant',
-                );
+                navigate(callsPath);
               }}
             >
               <Phone className="h-4 w-4" />
@@ -572,32 +695,44 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
       ) : null}
 
       {alertDoc ? (
-        <SectionMotion index={4} className="mt-5">
+        <SectionMotion index={4} className="mt-6">
           <div
-            className="rounded-2xl bg-warning-soft p-4"
+            className="rounded-2xl bg-warning-soft p-5"
             style={{
               border:
                 '1px solid color-mix(in oklab, var(--warning) 35%, transparent)',
               boxShadow: '0 1px 0 0 rgba(255,255,255,0.7) inset',
             }}
           >
-            <p className="text-sm font-semibold text-foreground">
-              {alertDoc.status === 'REJECTED'
-                ? `${alertDoc.title} was rejected — re-upload to keep your application moving`
-                : `${alertDoc.title} is missing — upload to keep your application moving`}
+            <p className="text-sm font-semibold leading-snug text-foreground">
+              {isConsultantDossier
+                ? alertDoc.status === 'REJECTED'
+                  ? `${alertDoc.title} was rejected — student must re-upload`
+                  : `${alertDoc.title} is missing — waiting on student upload`
+                : alertDoc.status === 'REJECTED'
+                  ? `${alertDoc.title} was rejected — re-upload to keep your application moving`
+                  : `${alertDoc.title} is missing — upload to keep your application moving`}
             </p>
             <TapButton
               onClick={() => navigate(docsPath)}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-[#0B1528] text-sm font-semibold text-primary-foreground"
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#0B1528] text-sm font-semibold text-primary-foreground"
             >
-              <Upload className="h-4 w-4" /> Upload
+              {isConsultantDossier ? (
+                <>
+                  <FileText className="h-4 w-4" /> Review documents
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4" /> Upload
+                </>
+              )}
             </TapButton>
           </div>
         </SectionMotion>
       ) : null}
 
       <SectionMotion index={5} className="mt-8">
-        <div className="mb-3 flex items-end justify-between gap-2">
+        <div className="mb-4 flex items-end justify-between gap-2">
           <div>
             <p className="label-caps">Paperwork</p>
             <h2 className="font-serif text-xl font-semibold text-foreground">
@@ -626,7 +761,7 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
                 )}
               >
                 <span className={cn('w-1 shrink-0', accent.bar)} />
-                <span className="flex flex-1 items-center gap-3 px-3 py-3">
+                <span className="flex flex-1 items-center gap-3 px-4 py-3.5">
                   <span
                     className={cn(
                       'flex h-10 w-10 items-center justify-center rounded-lg shadow-[inset_0_0_0_1px_rgba(212,175,55,0.35)]',
@@ -639,7 +774,7 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
                     <span className="block truncate text-sm font-semibold text-foreground">
                       {d.title}
                     </span>
-                    <span className="text-xs font-semibold text-muted-foreground">
+                    <span className="text-xs font-medium text-muted-foreground">
                       {fileMeta(d)}
                     </span>
                   </span>
@@ -649,9 +784,33 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
             );
           })}
           {data.documents.length === 0 ? (
-            <p className="px-4 py-6 text-sm font-semibold text-muted-foreground">
-              No documents yet.
-            </p>
+            <div className="flex flex-col items-center px-6 py-10 text-center">
+              <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-gold-ink">
+                <FileText className="h-5 w-5" />
+              </span>
+              <p className="font-serif text-base font-semibold text-foreground">
+                No documents yet
+              </p>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                {isConsultantDossier
+                  ? 'Waiting on the student to upload required files.'
+                  : 'Upload your first file to keep your application moving.'}
+              </p>
+              <TapButton
+                onClick={() => navigate(docsPath)}
+                className="btn-metallic mt-4 inline-flex items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold"
+              >
+                {isConsultantDossier ? (
+                  <>
+                    <FileText className="h-4 w-4" /> Open documents
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4" /> Go to documents
+                  </>
+                )}
+              </TapButton>
+            </div>
           ) : null}
         </div>
       </SectionMotion>
@@ -659,16 +818,16 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
       {data.deadlines.length > 0 ? (
         <SectionMotion index={6} className="mt-8 pb-2">
           <p className="label-caps">Calendar</p>
-          <h2 className="mb-3 font-serif text-xl font-semibold text-foreground">
+          <h2 className="mb-4 font-serif text-xl font-semibold text-foreground">
             Upcoming deadlines
           </h2>
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {data.deadlines.slice(0, 3).map((d) => {
               const left = daysUntil(d.date);
               return (
                 <li
                   key={`${d.applicationId}-${d.label}`}
-                  className="ivy-card flex items-center gap-3 px-3 py-3"
+                  className="ivy-card flex items-center gap-3 px-4 py-3.5"
                 >
                   <div className="flex h-12 w-12 flex-col items-center justify-center rounded-xl bg-gold-soft shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--gold)_40%,transparent)]">
                     <span className="font-serif text-lg font-semibold leading-none text-foreground">
@@ -682,7 +841,7 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
                     <p className="truncate text-sm font-semibold text-foreground">
                       {d.label} · {d.university}
                     </p>
-                    <p className="text-xs font-semibold text-muted-foreground">
+                    <p className="text-sm text-muted-foreground">
                       {left == null
                         ? d.date
                         : left < 0

@@ -4,18 +4,23 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Not, Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, In, IsNull, Not, Repository } from 'typeorm';
 import { JwtPayload } from '../auth/jwt-payload';
-import { UserRole, DocumentStatus } from '../common/enums';
+import { CallRequestStatus, DocumentStatus, UserRole } from '../common/enums';
 import { StudentProfile } from '../students/student-profile.entity';
 import { Document } from '../documents/document.entity';
 import { Application } from '../applications/application.entity';
 import { CallNote } from '../calls/call-note.entity';
 import { CallSession } from '../calls/call-session.entity';
+import { CallRequest } from '../calls/call-request.entity';
 import { ConsultantProfile } from './consultant-profile.entity';
 import { AccessService } from '../common/access.service';
 import { HandoverDto } from './dto/handover.dto';
+import { ChatSession } from '../messaging/chat-session.entity';
+import { ChatRequest } from '../messaging/chat-request.entity';
+import { Conversation } from '../messaging/conversation.entity';
+import { DirectMessage } from '../messaging/direct-message.entity';
 
 @Injectable()
 export class ConsultantsService {
@@ -33,6 +38,8 @@ export class ConsultantsService {
     @InjectRepository(ConsultantProfile)
     private readonly consultantsRepo: Repository<ConsultantProfile>,
     private readonly access: AccessService,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {}
 
   private requireConsultant(user: JwtPayload): string {
@@ -65,7 +72,7 @@ export class ConsultantsService {
       throw new BadRequestException('Cannot hand over a student to yourself');
     }
 
-    const student = await this.access.assertConsultantOwnsStudent(
+    await this.access.assertConsultantOwnsStudent(
       fromConsultantId,
       dto.studentId,
     );
@@ -77,60 +84,129 @@ export class ConsultantsService {
     if (!target) {
       throw new NotFoundException('Target consultant not found');
     }
+    if (target.user?.role !== UserRole.CONSULTANT) {
+      throw new BadRequestException('Target user is not a consultant');
+    }
 
-    const openCalls = await this.sessionsRepo.find({
-      where: {
-        studentId: student.id,
-        consultantId: fromConsultantId,
-        endedAt: IsNull(),
-      },
-    });
-    if (openCalls.length > 0) {
+    const result = await this.dataSource.transaction(async (manager) => {
+      const student = await manager.findOne(StudentProfile, {
+        where: { id: dto.studentId, consultantId: fromConsultantId },
+        relations: { user: true },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!student) {
+        throw new ForbiddenException('Student is not assigned to you');
+      }
+
       const now = new Date();
+
+      const openCalls = await manager.find(CallSession, {
+        where: {
+          studentId: student.id,
+          endedAt: IsNull(),
+        },
+      });
       for (const call of openCalls) {
         call.endedAt = now;
       }
-      await this.sessionsRepo.save(openCalls);
-    }
+      if (openCalls.length > 0) {
+        await manager.save(CallSession, openCalls);
+      }
+      for (const call of openCalls) {
+        await manager.update(
+          CallRequest,
+          { callSessionId: call.id },
+          { status: CallRequestStatus.COMPLETED },
+        );
+      }
 
-    student.consultantId = target.id;
-    await this.studentsRepo.save(student);
+      const openChats = await manager.find(ChatSession, {
+        where: {
+          studentId: student.id,
+          endedAt: IsNull(),
+        },
+      });
+      for (const chat of openChats) {
+        await manager.delete(DirectMessage, { chatSessionId: chat.id });
+        chat.endedAt = now;
+      }
+      if (openChats.length > 0) {
+        await manager.save(ChatSession, openChats);
+      }
+      for (const chat of openChats) {
+        await manager.update(
+          ChatRequest,
+          { chatSessionId: chat.id },
+          { status: CallRequestStatus.COMPLETED },
+        );
+      }
 
-    const refreshed = await this.studentsRepo.findOne({
-      where: { id: student.id },
-      relations: {
-        user: true,
-        consultant: { user: true },
-      },
+      await manager.update(
+        CallRequest,
+        {
+          studentId: student.id,
+          status: In([CallRequestStatus.PENDING, CallRequestStatus.APPROVED]),
+        },
+        { consultantId: target.id },
+      );
+
+      await manager.update(
+        ChatRequest,
+        {
+          studentId: student.id,
+          status: In([CallRequestStatus.PENDING, CallRequestStatus.APPROVED]),
+        },
+        { consultantId: target.id },
+      );
+
+      await manager.update(
+        Conversation,
+        { studentId: student.id },
+        { consultantId: target.id },
+      );
+
+      student.consultantId = target.id;
+      await manager.save(StudentProfile, student);
+
+      const refreshed = await manager.findOne(StudentProfile, {
+        where: { id: student.id },
+        relations: {
+          user: true,
+          consultant: { user: true },
+        },
+      });
+      if (!refreshed) {
+        throw new NotFoundException('Student not found after handover');
+      }
+
+      const [callCount, documentCount, applicationCount] = await Promise.all([
+        manager.count(CallSession, { where: { studentId: refreshed.id } }),
+        manager.count(Document, { where: { studentId: refreshed.id } }),
+        manager.count(Application, { where: { studentId: refreshed.id } }),
+      ]);
+
+      return {
+        studentId: refreshed.id,
+        studentName: refreshed.user.fullName,
+        fromConsultantId,
+        toConsultant: {
+          id: target.id,
+          fullName: target.user.fullName,
+          email: target.user.email,
+        },
+        closedOpenCalls: openCalls.length,
+        closedOpenChats: openChats.length,
+        inherited: {
+          callSessions: callCount,
+          documents: documentCount,
+          applications: applicationCount,
+        },
+        message:
+          'Handover complete. The receiving consultant can read applications, documents, and prior call transcripts for this student.',
+      };
     });
-    if (!refreshed) {
-      throw new NotFoundException('Student not found after handover');
-    }
 
-    const [callCount, documentCount, applicationCount] = await Promise.all([
-      this.sessionsRepo.count({ where: { studentId: refreshed.id } }),
-      this.documentsRepo.count({ where: { studentId: refreshed.id } }),
-      this.applicationsRepo.count({ where: { studentId: refreshed.id } }),
-    ]);
-
-    return {
-      studentId: refreshed.id,
-      studentName: refreshed.user.fullName,
-      fromConsultantId,
-      toConsultant: {
-        id: target.id,
-        fullName: target.user.fullName,
-        email: target.user.email,
-      },
-      closedOpenCalls: openCalls.length,
-      inherited: {
-        callSessions: callCount,
-        documents: documentCount,
-        applications: applicationCount,
-      },
-      message:
-        'Handover complete. The receiving consultant can read applications, documents, and prior call transcripts for this student.',
-    };
+    return result;
   }
 
   async listAssignedStudents(user: JwtPayload) {

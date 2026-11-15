@@ -28,14 +28,8 @@ export class ApplicationsController {
 
   @Get()
   @Roles(UserRole.STUDENT, UserRole.GUARDIAN, UserRole.CONSULTANT)
-  list(
-    @CurrentUser() user: unknown,
-    @Query('studentId') studentId?: string,
-  ) {
-    return this.applicationsService.listForUser(
-      user as JwtPayload,
-      studentId,
-    );
+  list(@CurrentUser() user: unknown, @Query('studentId') studentId?: string) {
+    return this.applicationsService.listForUser(user as JwtPayload, studentId);
   }
 
   @Get(':id')

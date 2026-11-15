@@ -6,11 +6,13 @@ import { DataSource } from 'typeorm';
 import {
   ApplicationStatus,
   ApplicationStepStatus,
+  CallRequestStatus,
   DocumentReviewDecision,
   DocumentStatus,
   UserRole,
 } from '../common/enums';
 import { entities } from './database.module';
+import { postgresSslOption } from './postgres-ssl';
 import { User } from '../users/user.entity';
 import { StudentProfile } from '../students/student-profile.entity';
 import { GuardianProfile } from '../guardians/guardian-profile.entity';
@@ -27,6 +29,12 @@ import { DocumentReview } from '../documents/document-review.entity';
 import { UniversityEmail } from '../emails/university-email.entity';
 import { CallSession } from '../calls/call-session.entity';
 import { CallNote } from '../calls/call-note.entity';
+import { CallRequest } from '../calls/call-request.entity';
+import { Conversation } from '../messaging/conversation.entity';
+import { DirectMessage } from '../messaging/direct-message.entity';
+import { ChatSession } from '../messaging/chat-session.entity';
+import { ChatRequest } from '../messaging/chat-request.entity';
+import { ChatMessage } from '../chat/chat-message.entity';
 
 loadEnv({ path: resolve(__dirname, '../../../.env') });
 loadEnv({ path: resolve(__dirname, '../../.env') });
@@ -73,25 +81,103 @@ async function seed() {
     url: databaseUrl,
     entities,
     synchronize: true,
-    ssl: { rejectUnauthorized: false },
+    ssl: postgresSslOption(databaseUrl),
   });
 
   await dataSource.initialize();
   console.log('Connected. Clearing and seeding demo data...');
 
   // Clear in FK-safe order
-  await dataSource.getRepository(CallNote).createQueryBuilder().delete().execute();
-  await dataSource.getRepository(CallSession).createQueryBuilder().delete().execute();
-  await dataSource.getRepository(DocumentReview).createQueryBuilder().delete().execute();
-  await dataSource.getRepository(Document).createQueryBuilder().delete().execute();
-  await dataSource.getRepository(UniversityEmail).createQueryBuilder().delete().execute();
-  await dataSource.getRepository(ApplicationStep).createQueryBuilder().delete().execute();
-  await dataSource.getRepository(Application).createQueryBuilder().delete().execute();
-  await dataSource.getRepository(Program).createQueryBuilder().delete().execute();
-  await dataSource.getRepository(University).createQueryBuilder().delete().execute();
-  await dataSource.getRepository(GuardianProfile).createQueryBuilder().delete().execute();
-  await dataSource.getRepository(StudentProfile).createQueryBuilder().delete().execute();
-  await dataSource.getRepository(ConsultantProfile).createQueryBuilder().delete().execute();
+  await dataSource
+    .getRepository(DirectMessage)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(ChatRequest)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(ChatSession)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(Conversation)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(ChatMessage)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(CallRequest)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(CallNote)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(CallSession)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(DocumentReview)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(Document)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(UniversityEmail)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(ApplicationStep)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(Application)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(Program)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(University)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(GuardianProfile)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(StudentProfile)
+    .createQueryBuilder()
+    .delete()
+    .execute();
+  await dataSource
+    .getRepository(ConsultantProfile)
+    .createQueryBuilder()
+    .delete()
+    .execute();
   await dataSource.getRepository(User).createQueryBuilder().delete().execute();
 
   const passwordHash = await bcrypt.hash('demo123', 10);
@@ -226,7 +312,8 @@ async function seed() {
       status: ApplicationStatus.WAITLISTED,
       entryScore: '71',
       meritListDate: '2026-11-12',
-      decisionNotes: 'Entry test score 71/100. Merit list expected 12 November.',
+      decisionNotes:
+        'Entry test score 71/100. Merit list expected 12 November.',
     }),
   );
   const kitApp = await applicationRepo.save(
@@ -351,13 +438,52 @@ async function seed() {
         'Reviewed application progress. KIT offer fee pending; Indus Valley waitlisted pending merit list; transcript rejected and needs re-upload.',
       actionItems:
         '1) Student re-uploads transcript\n2) Confirm KIT fee payment plan\n3) Monitor Indus Valley merit list on 12 November',
-      universitiesDiscussed: 'KIT, Indus Valley University, Punjab Science and Technology University',
+      universitiesDiscussed:
+        'KIT, Indus Valley University, Punjab Science and Technology University',
       followUps: 'Follow up on transcript re-upload before 10 November 2026.',
     }),
   );
 
   // Keep consultant2 available for reassignment demos (no students yet)
   void consultant2;
+
+  const callRequestRepo = dataSource.getRepository(CallRequest);
+  await callRequestRepo.save(
+    callRequestRepo.create({
+      studentId: student.id,
+      consultantId: consultant1.id,
+      scheduledFor: new Date('2026-11-20T10:00:00.000Z'),
+      status: CallRequestStatus.APPROVED,
+      studentNote: 'Want to review KIT fee deadline and transcript re-upload.',
+      consultantNote: null,
+      callSessionId: null,
+    }),
+  );
+
+  const conversationRepo = dataSource.getRepository(Conversation);
+  const dmRepo = dataSource.getRepository(DirectMessage);
+  const conversation = await conversationRepo.save(
+    conversationRepo.create({
+      studentId: student.id,
+      consultantId: consultant1.id,
+    }),
+  );
+  await dmRepo.save(
+    dmRepo.create({
+      conversationId: conversation.id,
+      senderUserId: consultant1User.id,
+      body: 'Hi Ali — please re-upload your transcript before the KIT fee deadline. Happy to hop on a quick call if helpful.',
+      readAt: null,
+    }),
+  );
+  await dmRepo.save(
+    dmRepo.create({
+      conversationId: conversation.id,
+      senderUserId: studentUser.id,
+      body: 'Thanks Sara. I will upload a clearer scan today and confirm once it is under review.',
+      readAt: null,
+    }),
+  );
 
   console.log('Seed complete.');
   console.log('Demo accounts (password: demo123):');

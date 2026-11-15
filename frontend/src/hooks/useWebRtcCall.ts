@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { getSocketOrigin } from '../lib/socketUrl';
+import { trackSocket } from '../lib/socketRegistry';
 
 type SignalMessage = {
   type: 'offer' | 'answer' | 'ice';
@@ -24,6 +25,7 @@ export function useWebRtcCall(options: {
     'idle' | 'connecting' | 'waiting' | 'connected' | 'error'
   >('idle');
   const [peerName, setPeerName] = useState<string | null>(null);
+  const [peerLeft, setPeerLeft] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
@@ -42,11 +44,13 @@ export function useWebRtcCall(options: {
       }
       setStatus('idle');
       setPeerName(null);
+      setPeerLeft(false);
       return;
     }
 
     let cancelled = false;
     setStatus('connecting');
+    setPeerLeft(false);
     setError(null);
 
     const token = localStorage.getItem('scholara_token');
@@ -55,6 +59,7 @@ export function useWebRtcCall(options: {
       transports: ['websocket', 'polling'],
     });
     socketRef.current = socket;
+    const untrack = trackSocket(socket);
 
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     pcRef.current = pc;
@@ -144,6 +149,7 @@ export function useWebRtcCall(options: {
       'peer-joined',
       (payload: { userId: string; fullName: string; role: string }) => {
         setPeerName(payload.fullName);
+        setPeerLeft(false);
         setStatus('connecting');
         void createOffer();
       },
@@ -151,6 +157,7 @@ export function useWebRtcCall(options: {
 
     socket.on('peer-left', () => {
       setPeerName(null);
+      setPeerLeft(true);
       setStatus('waiting');
     });
 
@@ -198,6 +205,7 @@ export function useWebRtcCall(options: {
     return () => {
       cancelled = true;
       socket.emit('leave');
+      untrack();
       socket.disconnect();
       socketRef.current = null;
       pc.close();
@@ -209,5 +217,5 @@ export function useWebRtcCall(options: {
     };
   }, [enabled, callId, localStream]);
 
-  return { status, peerName, error };
+  return { status, peerName, peerLeft, error };
 }

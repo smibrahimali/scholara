@@ -17,10 +17,7 @@ export class EmailsController {
 
   @Get()
   @Roles(UserRole.STUDENT, UserRole.GUARDIAN, UserRole.CONSULTANT)
-  list(
-    @CurrentUser() user: unknown,
-    @Query('studentId') studentId?: string,
-  ) {
+  list(@CurrentUser() user: unknown, @Query('studentId') studentId?: string) {
     return this.applicationsService.listEmailsForUser(
       user as JwtPayload,
       studentId,

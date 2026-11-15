@@ -2,11 +2,19 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
 import { api } from '../services/api';
+import { queryClient } from '../lib/queryClient';
+import { setUnauthorizedListener } from '../lib/authEvents';
+import {
+  clearClientSession,
+  TOKEN_KEY,
+  USER_KEY,
+} from '../lib/sessionCleanup';
 import type { AuthUser, DemoLoginResponse } from '../types/auth';
 
 interface AuthContextValue {
@@ -17,9 +25,6 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-
-const TOKEN_KEY = 'scholara_token';
-const USER_KEY = 'scholara_user';
 
 function readStoredUser(): AuthUser | null {
   const raw = localStorage.getItem(USER_KEY);
@@ -37,23 +42,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
   const [user, setUser] = useState<AuthUser | null>(() => readStoredUser());
 
+  const logout = useCallback(() => {
+    clearClientSession(queryClient);
+    setToken(null);
+    setUser(null);
+  }, []);
+
+  useEffect(() => {
+    setUnauthorizedListener(() => {
+      setToken(null);
+      setUser(null);
+    });
+    return () => setUnauthorizedListener(null);
+  }, []);
+
   const login = useCallback(async (email: string, password: string) => {
     const { data } = await api.post<DemoLoginResponse>('/auth/demo-login', {
       email,
       password,
     });
+    // Drop previous role's cache/sockets only after credentials succeed.
+    clearClientSession(queryClient);
     localStorage.setItem(TOKEN_KEY, data.accessToken);
     localStorage.setItem(USER_KEY, JSON.stringify(data.user));
     setToken(data.accessToken);
     setUser(data.user);
     return data.user;
-  }, []);
-
-  const logout = useCallback(() => {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    setToken(null);
-    setUser(null);
   }, []);
 
   const value = useMemo(

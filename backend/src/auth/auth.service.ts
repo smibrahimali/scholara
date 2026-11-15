@@ -4,7 +4,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
 import { User } from '../users/user.entity';
-import { UserRole } from '../common/enums';
 import { DemoLoginDto } from './dto/demo-login.dto';
 import { JwtPayload } from './jwt-payload';
 
@@ -68,7 +67,7 @@ export class AuthService {
 
     return users.map((user) => ({
       email: user.email,
-      role: user.role as UserRole,
+      role: user.role,
       fullName: user.fullName,
       passwordHint: 'demo123',
     }));

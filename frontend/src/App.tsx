@@ -1,5 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -14,15 +14,8 @@ import { ProfilePage } from './pages/ProfilePage';
 import { MyConsultantPage } from './pages/MyConsultantPage';
 import { LiveCallPage } from './pages/LiveCallPage';
 import { EmailLogPage } from './pages/EmailLogPage';
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30_000,
-      refetchOnWindowFocus: false,
-    },
-  },
-});
+import { MessagesPage } from './pages/MessagesPage';
+import { queryClient } from './lib/queryClient';
 
 function ConsultantStudentDashboard() {
   const { studentId } = useParams<{ studentId: string }>();
@@ -49,6 +42,11 @@ function ConsultantStudentEmails() {
   return <EmailLogPage studentId={studentId} />;
 }
 
+function ConsultantStudentMessages() {
+  const { studentId } = useParams<{ studentId: string }>();
+  return <MessagesPage studentId={studentId} />;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -70,6 +68,7 @@ export default function App() {
               <Route path="profile" element={<ProfilePage />} />
               <Route path="emails" element={<EmailLogPage />} />
               <Route path="consultant" element={<MyConsultantPage />} />
+              <Route path="messages" element={<MessagesPage />} />
               <Route path="live-call/:callId" element={<LiveCallPage />} />
               <Route
                 path="applications/:id"
@@ -112,6 +111,14 @@ export default function App() {
                 element={
                   <ProtectedRoute roles={['CONSULTANT']}>
                     <ConsultantStudentEmails />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="students/:studentId/messages"
+                element={
+                  <ProtectedRoute roles={['CONSULTANT']}>
+                    <ConsultantStudentMessages />
                   </ProtectedRoute>
                 }
               />

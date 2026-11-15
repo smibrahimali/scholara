@@ -20,14 +20,11 @@ describe('AppController (e2e smoke without DB)', () => {
   });
 
   it('/api (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/api')
-      .expect(200)
-      .expect({
-        name: 'Scholara API',
-        status: 'ok',
-        auth: 'POST /api/auth/demo-login',
-      });
+    return request(app.getHttpServer()).get('/api').expect(200).expect({
+      name: 'Scholara API',
+      status: 'ok',
+      auth: 'POST /api/auth/demo-login',
+    });
   });
 
   afterEach(async () => {

@@ -64,6 +64,9 @@ export class DocumentsService {
     if (!file) {
       throw new BadRequestException('file is required');
     }
+    if (!file.buffer?.length || file.size === 0) {
+      throw new BadRequestException('File is empty');
+    }
     if (file.size > MAX_UPLOAD_BYTES) {
       throw new BadRequestException('File must be 8 MB or smaller');
     }
@@ -92,10 +95,7 @@ export class DocumentsService {
       document.status === DocumentStatus.REJECTED ||
       (document.status === DocumentStatus.UNDER_REVIEW &&
         !document.storagePath);
-    if (
-      document.status === DocumentStatus.VERIFIED ||
-      !canReplaceByStatus
-    ) {
+    if (document.status === DocumentStatus.VERIFIED || !canReplaceByStatus) {
       throw new BadRequestException(
         'Only missing or rejected documents can be uploaded',
       );
@@ -105,17 +105,23 @@ export class DocumentsService {
       .replace(/[^a-zA-Z0-9._-]/g, '_')
       .slice(0, 120);
     const path = `${document.studentId}/${document.id}/${Date.now()}-${safeName}`;
+    const previousPath = document.storagePath;
 
-    if (document.storagePath) {
-      await this.storage.removeObject(document.storagePath);
-    }
-
+    // Upload first so a failed write never deletes the previous object.
     await this.storage.uploadObject(path, file.buffer, file.mimetype);
 
     document.storagePath = path;
     document.status = DocumentStatus.UNDER_REVIEW;
     document.rejectionReason = null;
     await this.documentsRepo.save(document);
+
+    if (previousPath && previousPath !== path) {
+      try {
+        await this.storage.removeObject(previousPath);
+      } catch {
+        // Best-effort cleanup; new file is already linked.
+      }
+    }
 
     const saved = await this.documentsRepo.findOne({
       where: { id: document.id },
@@ -156,10 +162,26 @@ export class DocumentsService {
     try {
       const url = await this.storage.createSignedUrl(document.storagePath);
       return { url, expiresInSeconds: 600 };
-    } catch {
-      await this.clearMissingFile(document);
-      throw new NotFoundException(
-        'File is missing from storage. Please upload again.',
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) {
+        const body = error.getResponse();
+        const code =
+          typeof body === 'object' &&
+          body !== null &&
+          'code' in body &&
+          typeof (body as { code?: unknown }).code === 'string'
+            ? (body as { code: string }).code
+            : undefined;
+        if (code === 'STORAGE_OBJECT_MISSING') {
+          await this.clearMissingFile(document);
+          throw new NotFoundException(
+            'File is missing from storage. Please upload again.',
+          );
+        }
+        throw error;
+      }
+      throw new ServiceUnavailableException(
+        'Could not create a download link for this file.',
       );
     }
   }

@@ -41,16 +41,17 @@ const STEP_META: Record<
   },
   Upcoming: {
     label: 'Upcoming',
-    nodeClass: 'border-dashed border-muted bg-ivory text-muted',
+    nodeClass:
+      'border-dashed border-muted-foreground/40 bg-ivory text-muted-foreground',
     lineClass:
       'bg-[repeating-linear-gradient(to_bottom,#c5ced6_0_4px,transparent_4px_8px)]',
-    textClass: 'text-muted',
+    textClass: 'text-muted-foreground',
   },
   Skipped: {
     label: 'Skipped',
-    nodeClass: 'border-muted/40 bg-ivory text-muted',
-    lineClass: 'bg-muted/30',
-    textClass: 'text-muted line-through',
+    nodeClass: 'border-muted-foreground/40 bg-ivory text-muted-foreground',
+    lineClass: 'bg-muted-foreground/30',
+    textClass: 'text-muted-foreground line-through',
   },
 };
 
@@ -108,13 +109,25 @@ export function AdmissionTimeline({
                 >
                   {step.name}
                 </h4>
-                <span className="inline-flex min-h-[32px] items-center rounded-full bg-navy/5 px-2.5 font-body text-[10px] font-bold uppercase tracking-[0.1em] text-muted">
+                <span
+                  className={cn(
+                    'inline-flex min-h-[32px] items-center rounded-full px-2.5 font-body text-[10px] font-bold uppercase tracking-[0.1em]',
+                    step.status === 'Done' &&
+                      'bg-success-soft text-success',
+                    step.status === 'Current' &&
+                      'bg-gold-soft text-gold-ink',
+                    step.status === 'Upcoming' &&
+                      'bg-secondary text-muted-foreground',
+                    step.status === 'Skipped' &&
+                      'bg-secondary text-muted-foreground',
+                  )}
+                >
                   {meta.label}
                 </span>
               </div>
 
               {step.date || step.approvedBy ? (
-                <p className="mt-2 font-body text-xs text-muted">
+                <p className="mt-2 font-body text-xs text-muted-foreground">
                   {step.date}
                   {step.date && step.approvedBy ? ' · ' : null}
                   {step.approvedBy}

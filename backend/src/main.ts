@@ -16,8 +16,7 @@ async function bootstrap() {
       transform: true,
     }),
   );
-  const webOrigin =
-    config.get<string>('WEB_ORIGIN') ?? 'http://localhost:5173';
+  const webOrigin = config.get<string>('WEB_ORIGIN') ?? 'http://localhost:5173';
   app.enableCors({
     origin: webOrigin,
     credentials: true,
@@ -29,11 +28,16 @@ async function bootstrap() {
     .setVersion('0.1.0')
     .addBearerAuth()
     .build();
-  SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, swagger));
+  SwaggerModule.setup(
+    'api/docs',
+    app,
+    SwaggerModule.createDocument(app, swagger),
+  );
 
   const port = config.get<number>('PORT') ?? 3000;
   await app.listen(port);
-  // Socket.io for live 1:1 WebRTC signaling is mounted by CallsGateway
-  // at namespace /calls-realtime (same HTTP server / CORS origin as WEB_ORIGIN).
+  // Socket.io namespaces (same HTTP server / CORS as WEB_ORIGIN):
+  // - /calls-realtime — WebRTC signaling
+  // - /messaging-realtime — student↔consultant direct messages
 }
-bootstrap();
+void bootstrap();

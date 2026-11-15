@@ -11,12 +11,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import {
-  ApiBearerAuth,
-  ApiBody,
-  ApiConsumes,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -36,10 +31,7 @@ export class DocumentsController {
 
   @Get()
   @Roles(UserRole.STUDENT, UserRole.GUARDIAN, UserRole.CONSULTANT)
-  list(
-    @CurrentUser() user: unknown,
-    @Query('studentId') studentId?: string,
-  ) {
+  list(@CurrentUser() user: unknown, @Query('studentId') studentId?: string) {
     return this.documentsService.listForUser(user as JwtPayload, studentId);
   }
 

@@ -19,7 +19,7 @@ type Tab = {
 
 const STUDENT_TABS: Tab[] = [
   { to: '/app', end: true, label: 'Home', Icon: Home },
-  { to: '/app/applications', label: 'Apps', Icon: GraduationCap },
+  { to: '/app/applications', label: 'Application', Icon: GraduationCap },
   { to: '/app/documents', label: 'Documents', Icon: FileText },
   { to: '/app/profile', label: 'Profile', Icon: User },
 ];

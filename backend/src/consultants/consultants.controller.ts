@@ -41,8 +41,7 @@ export class ConsultantsController {
     @Query('studentId') studentId?: string,
   ) {
     const payload = user as JwtPayload;
-    const id =
-      studentId ?? payload.studentProfileId ?? payload.linkedStudentId;
+    const id = studentId ?? payload.studentProfileId ?? payload.linkedStudentId;
     if (!id) {
       return [];
     }

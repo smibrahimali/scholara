@@ -14,7 +14,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtPayload } from '../auth/jwt-payload';
 import { CallsService } from './calls.service';
 
-type AuthedSocket = Socket & {
+type AuthedSocket = Omit<Socket, 'data'> & {
   data: {
     user?: JwtPayload;
     callId?: string;
@@ -28,9 +28,7 @@ type AuthedSocket = Socket & {
     credentials: true,
   },
 })
-export class CallsGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
-{
+export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(CallsGateway.name);
 
   @WebSocketServer()
@@ -160,6 +158,14 @@ export class CallsGateway
     }
     if (client.data.callId !== callId) {
       return { ok: false, error: 'Join the call before signaling' };
+    }
+
+    try {
+      await this.callsService.assertCanJoinLiveCall(user, callId);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Cannot signal on this call';
+      return { ok: false, error: message };
     }
 
     client.to(this.room(callId)).emit('signal', {

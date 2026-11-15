@@ -66,7 +66,7 @@ function DetailStepNotes({
       <TapButton
         disabled={!dirty || mutation.isPending}
         onClick={() => mutation.mutate(draft.trim())}
-        className="flex w-full items-center justify-center rounded-xl border border-border bg-card text-sm font-semibold disabled:opacity-50"
+        className="flex w-full items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground disabled:bg-secondary disabled:text-muted-foreground disabled:opacity-100"
       >
         {mutation.isPending ? 'Saving…' : 'Save notes'}
       </TapButton>
@@ -77,8 +77,6 @@ function DetailStepNotes({
 export function ApplicationDetailPage() {
   const { id = '', studentId } = useParams();
   const { user } = useAuth();
-  const queryClient = useQueryClient();
-  const canMarkComplete = user?.role === 'CONSULTANT';
   const canEditNotes = user?.role === 'CONSULTANT';
   const celebratedRef = useRef(false);
 
@@ -94,29 +92,6 @@ export function ApplicationDetailPage() {
       fireScholaraConfetti();
     }
   }, [data?.status]);
-
-  const stepMutation = useMutation({
-    mutationFn: ({
-      stepNumber,
-      status,
-    }: {
-      stepNumber: number;
-      status: string;
-    }) => updateApplicationStep(id, stepNumber, { status }),
-    onSuccess: (updated) => {
-      queryClient.setQueryData(['application', id], updated);
-      void queryClient.invalidateQueries({
-        queryKey: ['applications'],
-        refetchType: 'none',
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ['dashboard'],
-        refetchType: 'none',
-      });
-      toast.success('Step updated');
-    },
-    onError: () => toast.error('Could not update step'),
-  });
 
   if (isLoading) {
     return (
@@ -200,31 +175,17 @@ export function ApplicationDetailPage() {
               : null,
           note: canEditNotes ? null : step.notes,
         }))}
-        renderStepAction={(step: AdmissionTimelineStep) => (
-          <div className="space-y-2">
-            {canEditNotes ? (
-              <DetailStepNotes
-                applicationId={id}
-                stepNumber={step.stepNumber}
-                notes={notesByStep.get(step.stepNumber) ?? null}
-              />
-            ) : null}
-            {canMarkComplete && step.status === 'Current' ? (
-              <TapButton
-                className="flex w-full items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground"
-                disabled={stepMutation.isPending}
-                onClick={() =>
-                  stepMutation.mutate({
-                    stepNumber: step.stepNumber,
-                    status: 'COMPLETED',
-                  })
-                }
-              >
-                {stepMutation.isPending ? 'Updating…' : 'Mark complete'}
-              </TapButton>
-            ) : null}
-          </div>
-        )}
+        renderStepAction={
+          canEditNotes
+            ? (step: AdmissionTimelineStep) => (
+                <DetailStepNotes
+                  applicationId={id}
+                  stepNumber={step.stepNumber}
+                  notes={notesByStep.get(step.stepNumber) ?? null}
+                />
+              )
+            : undefined
+        }
       />
 
       <div className="mt-8 space-y-3">

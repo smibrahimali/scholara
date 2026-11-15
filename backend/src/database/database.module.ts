@@ -14,7 +14,13 @@ import { DocumentReview } from '../documents/document-review.entity';
 import { UniversityEmail } from '../emails/university-email.entity';
 import { CallSession } from '../calls/call-session.entity';
 import { CallNote } from '../calls/call-note.entity';
+import { CallRequest } from '../calls/call-request.entity';
 import { ChatMessage } from '../chat/chat-message.entity';
+import { Conversation } from '../messaging/conversation.entity';
+import { DirectMessage } from '../messaging/direct-message.entity';
+import { ChatSession } from '../messaging/chat-session.entity';
+import { ChatRequest } from '../messaging/chat-request.entity';
+import { postgresSslOption } from './postgres-ssl';
 
 export const entities = [
   User,
@@ -30,7 +36,12 @@ export const entities = [
   UniversityEmail,
   CallSession,
   CallNote,
+  CallRequest,
   ChatMessage,
+  Conversation,
+  DirectMessage,
+  ChatSession,
+  ChatRequest,
 ];
 
 @Module({
@@ -50,9 +61,7 @@ export const entities = [
           entities,
           synchronize: config.get<string>('NODE_ENV') !== 'production',
           logging: config.get<string>('NODE_ENV') === 'development',
-          ssl: {
-            rejectUnauthorized: false,
-          },
+          ssl: postgresSslOption(databaseUrl),
         };
       },
     }),

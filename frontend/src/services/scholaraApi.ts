@@ -1,6 +1,7 @@
 import { api } from './api';
 import type {
   ApplicationItem,
+  CallRequestItem,
   CallSessionItem,
   ConsultantPeer,
   ConsultantStudent,
@@ -104,8 +105,50 @@ export async function fetchCall(id: string) {
   return data;
 }
 
-export async function startCall(studentId: string) {
-  const { data } = await api.post<CallSessionItem>('/calls', { studentId });
+export async function startCall(callRequestId: string) {
+  const { data } = await api.post<CallSessionItem>('/calls', {
+    callRequestId,
+  });
+  return data;
+}
+
+export async function fetchCallRequests(params?: {
+  studentId?: string;
+  status?: string;
+}) {
+  const { data } = await api.get<CallRequestItem[]>('/call-requests', {
+    params,
+  });
+  return data;
+}
+
+export async function createCallRequest(scheduledFor: string, note?: string) {
+  const { data } = await api.post<CallRequestItem>('/call-requests', {
+    scheduledFor,
+    note,
+  });
+  return data;
+}
+
+export async function cancelCallRequest(id: string) {
+  const { data } = await api.post<CallRequestItem>(
+    `/call-requests/${id}/cancel`,
+  );
+  return data;
+}
+
+export async function approveCallRequest(id: string) {
+  const { data } = await api.post<CallRequestItem>(
+    `/call-requests/${id}/approve`,
+  );
+  return data;
+}
+
+export async function rejectCallRequest(id: string, reason?: string) {
+  const { data } = await api.post<CallRequestItem>(
+    `/call-requests/${id}/reject`,
+    { reason },
+  );
   return data;
 }
 

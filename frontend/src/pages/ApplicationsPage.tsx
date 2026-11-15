@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, GraduationCap } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageMotion } from '../components/ivy/PageMotion';
 import { ScreenTitle } from '../components/ivy/ScreenTitle';
@@ -61,11 +61,11 @@ function StepNotesPanel({
 
   if (!canEdit) {
     return (
-      <div className="mb-3 rounded-xl border border-border bg-card p-3 text-sm text-muted-foreground">
+      <div className="mb-4 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
         {step.notes?.trim() ? step.notes : 'No notes for this step yet.'}
         {step.completedAt ? (
-          <span className="mt-1 block text-xs font-semibold text-foreground">
-            {formatDisplayDate(step.completedAt)}
+          <span className="mt-2 block text-xs font-medium text-muted-foreground">
+            Completed {formatDisplayDate(step.completedAt)}
           </span>
         ) : null}
       </div>
@@ -73,7 +73,7 @@ function StepNotesPanel({
   }
 
   return (
-    <div className="mb-3 space-y-2 rounded-xl border border-border bg-card p-3">
+    <div className="mb-4 space-y-2.5 rounded-xl border border-border bg-card p-4">
       <label className="block text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
         Step notes
       </label>
@@ -85,14 +85,14 @@ function StepNotesPanel({
         className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground outline-none ring-gold/40 placeholder:font-medium placeholder:text-muted-foreground focus:ring-2"
       />
       {step.completedAt ? (
-        <span className="block text-xs font-semibold text-foreground">
-          {formatDisplayDate(step.completedAt)}
+        <span className="block text-xs font-medium text-muted-foreground">
+          Completed {formatDisplayDate(step.completedAt)}
         </span>
       ) : null}
       <TapButton
         disabled={!dirty || mutation.isPending}
         onClick={() => mutation.mutate(draft.trim())}
-        className="flex w-full items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-50"
+        className="flex w-full items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground disabled:bg-secondary disabled:text-muted-foreground disabled:opacity-100"
       >
         {mutation.isPending ? 'Saving…' : 'Save notes'}
       </TapButton>
@@ -122,20 +122,22 @@ function JourneyTimeline({
   );
 
   return (
-    <div>
-      <ScreenTitle
-        eyebrow={application.program.name}
-        title={application.university.name}
-      />
-      <div className="mb-5 flex items-center justify-between text-sm">
-        <span className="text-muted-foreground">
-          Step {Math.min(doneCount + 1, Math.max(steps.length, 1))} of{' '}
-          {Math.max(steps.length, 12)}
-        </span>
-        <span className="font-semibold">
-          {steps.length ? Math.round((doneCount / steps.length) * 100) : 0}%
-          complete
-        </span>
+    <div className="space-y-6">
+      <div>
+        <ScreenTitle
+          eyebrow={application.program.name}
+          title={application.university.name}
+        />
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">
+            Step {Math.min(doneCount + 1, Math.max(steps.length, 1))} of{' '}
+            {Math.max(steps.length, 12)}
+          </span>
+          <span className="font-semibold text-foreground">
+            {steps.length ? Math.round((doneCount / steps.length) * 100) : 0}%
+            complete
+          </span>
+        </div>
       </div>
 
       <ol className="relative">
@@ -181,7 +183,7 @@ function JourneyTimeline({
               <button
                 type="button"
                 onClick={() => setOpen(isOpen ? null : i)}
-                className="flex min-h-14 w-full items-center justify-between py-2 text-left"
+                className="flex min-h-14 w-full items-center justify-between py-2.5 text-left"
               >
                 <span>
                   <span
@@ -194,9 +196,9 @@ function JourneyTimeline({
                   </span>
                   <span
                     className={cn(
-                      'text-xs',
+                      'text-sm',
                       state === 'current'
-                        ? 'text-gold-ink'
+                        ? 'font-medium text-gold-ink'
                         : 'text-muted-foreground',
                     )}
                   >
@@ -234,7 +236,7 @@ function JourneyTimeline({
 
       <TapButton
         onClick={onOpenDetail}
-        className="mt-4 flex w-full items-center justify-center rounded-xl border border-border bg-card text-sm font-semibold"
+        className="btn-metallic flex w-full items-center justify-center rounded-xl text-sm font-semibold"
       >
         Open full application
       </TapButton>
@@ -280,45 +282,62 @@ export function ApplicationsPage({ studentId }: { studentId?: string }) {
 
   return (
     <PageMotion>
-      {showPicker ? (
-        <div className="mb-5 flex gap-2 overflow-x-auto no-scrollbar">
-          {apps.map((app) => (
-            <button
-              key={app.id}
-              type="button"
-              onClick={() => setSelectedId(app.id)}
-              className={cn(
-                'min-h-12 shrink-0 rounded-full border px-4 text-xs font-bold uppercase tracking-[0.08em]',
-                (selectedId ?? apps[0]?.id) === app.id
-                  ? 'border-gold bg-gold-soft text-gold-ink'
-                  : 'border-border bg-card text-muted-foreground',
-              )}
-            >
-              {app.university.name}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <div className="space-y-6">
+        {showPicker ? (
+          <div className="flex gap-2 overflow-x-auto no-scrollbar">
+            {apps.map((app) => (
+              <button
+                key={app.id}
+                type="button"
+                onClick={() => setSelectedId(app.id)}
+                className={cn(
+                  'min-h-12 shrink-0 rounded-full border px-4 text-xs font-bold uppercase tracking-[0.08em]',
+                  (selectedId ?? apps[0]?.id) === app.id
+                    ? 'border-gold bg-gold-soft text-gold-ink'
+                    : 'border-border bg-card text-muted-foreground',
+                )}
+              >
+                {app.university.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
-      {headerNote ? (
-        <p className="text-sm text-muted-foreground">{headerNote}</p>
-      ) : null}
+        {headerNote ? (
+          <div className="ivy-card flex flex-col items-center px-6 py-12 text-center">
+            <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-gold-ink">
+              <GraduationCap className="h-5 w-5" />
+            </span>
+            <p className="font-serif text-lg font-semibold text-foreground">
+              No applications yet
+            </p>
+            <p className="mt-2 max-w-xs text-sm text-muted-foreground">
+              {headerNote} Check back once a university journey is seeded for
+              this student.
+            </p>
+          </div>
+        ) : null}
 
-      {detailQuery.isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading steps…</p>
-      ) : detailQuery.data ? (
-        <JourneyTimeline
-          application={detailQuery.data}
-          canEditNotes={canEditNotes}
-          onOpenDetail={() =>
-            navigate(
-              studentId
-                ? `/app/students/${studentId}/applications/${detailQuery.data!.id}`
-                : `/app/applications/${detailQuery.data!.id}`,
-            )
-          }
-        />
-      ) : null}
+        {detailQuery.isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading steps…</p>
+        ) : detailQuery.isError ? (
+          <p className="text-sm text-destructive">
+            Could not load application steps. Try refreshing.
+          </p>
+        ) : detailQuery.data ? (
+          <JourneyTimeline
+            application={detailQuery.data}
+            canEditNotes={canEditNotes}
+            onOpenDetail={() =>
+              navigate(
+                studentId
+                  ? `/app/students/${studentId}/applications/${detailQuery.data!.id}`
+                  : `/app/applications/${detailQuery.data!.id}`,
+              )
+            }
+          />
+        ) : null}
+      </div>
     </PageMotion>
   );
 }

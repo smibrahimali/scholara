@@ -12,6 +12,7 @@ import { JwtPayload } from '../auth/jwt-payload';
 import { GroqService } from '../groq/groq.service';
 import { CallSession } from './call-session.entity';
 import { CallNote } from './call-note.entity';
+import { CallRequestsService } from './call-requests.service';
 import { StartCallDto } from './dto/start-call.dto';
 import { UpdateTranscriptDto } from './dto/update-transcript.dto';
 import { UpsertCallNoteDto } from './dto/upsert-call-note.dto';
@@ -26,6 +27,7 @@ export class CallsService {
     private readonly notesRepo: Repository<CallNote>,
     private readonly access: AccessService,
     private readonly groq: GroqService,
+    private readonly callRequests: CallRequestsService,
   ) {}
 
   async listForUser(user: JwtPayload, studentId?: string) {
@@ -53,14 +55,14 @@ export class CallsService {
 
   async start(user: JwtPayload, dto: StartCallDto) {
     this.requireConsultant(user);
-    await this.access.assertConsultantOwnsStudent(
-      user.consultantProfileId!,
-      dto.studentId,
+    const request = await this.callRequests.requireApprovedForStart(
+      user,
+      dto.callRequestId,
     );
 
     const open = await this.sessionsRepo.findOne({
       where: {
-        studentId: dto.studentId,
+        studentId: request.studentId,
         consultantId: user.consultantProfileId!,
         endedAt: IsNull(),
       },
@@ -73,7 +75,7 @@ export class CallsService {
 
     const session = await this.sessionsRepo.save(
       this.sessionsRepo.create({
-        studentId: dto.studentId,
+        studentId: request.studentId,
         consultantId: user.consultantProfileId!,
         startedAt: new Date(),
         endedAt: null,
@@ -81,6 +83,12 @@ export class CallsService {
       }),
     );
 
+    try {
+      await this.callRequests.attachSession(request.id, session.id);
+    } catch (error) {
+      await this.sessionsRepo.delete(session.id);
+      throw error;
+    }
     return this.findSessionOrFail(session.id);
   }
 
@@ -154,6 +162,7 @@ export class CallsService {
     }
     session.endedAt = new Date();
     await this.sessionsRepo.save(session);
+    await this.callRequests.completeBySessionId(session.id);
     return this.findSessionOrFail(session.id);
   }
 
@@ -216,6 +225,11 @@ export class CallsService {
     if (session.consultantId !== user.consultantProfileId) {
       throw new ForbiddenException('Call is not assigned to you');
     }
+    // Former consultants lose write rights after handover even if they created the session.
+    await this.access.assertConsultantOwnsStudent(
+      user.consultantProfileId,
+      session.studentId,
+    );
     return session;
   }
 

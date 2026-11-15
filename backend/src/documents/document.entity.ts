@@ -35,7 +35,12 @@ export class Document {
   @Column({ type: 'enum', enum: DocumentStatus })
   status!: DocumentStatus;
 
-  @Column({ name: 'storage_path', type: 'varchar', length: 512, nullable: true })
+  @Column({
+    name: 'storage_path',
+    type: 'varchar',
+    length: 512,
+    nullable: true,
+  })
   storagePath!: string | null;
 
   @Column({ name: 'rejection_reason', type: 'text', nullable: true })

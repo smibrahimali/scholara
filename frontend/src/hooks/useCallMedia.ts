@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 export function useCallMedia(enabled: boolean) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
   const streamRef = useRef<MediaStream | null>(null);
 
   const stop = useCallback(() => {
@@ -10,6 +11,12 @@ export function useCallMedia(enabled: boolean) {
     streamRef.current = null;
     setStream(null);
   }, []);
+
+  const retry = useCallback(() => {
+    stop();
+    setError(null);
+    setRetryToken((n) => n + 1);
+  }, [stop]);
 
   useEffect(() => {
     if (!enabled) {
@@ -46,7 +53,7 @@ export function useCallMedia(enabled: boolean) {
       cancelled = true;
       stop();
     };
-  }, [enabled, stop]);
+  }, [enabled, stop, retryToken]);
 
-  return { stream, error, stop };
+  return { stream, error, stop, retry };
 }

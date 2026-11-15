@@ -58,10 +58,12 @@ export class StorageService implements OnModuleInit {
     contentType: string,
   ): Promise<string> {
     const client = this.requireClient();
-    const { error } = await client.storage.from(this.bucket).upload(path, body, {
-      contentType,
-      upsert: true,
-    });
+    const { error } = await client.storage
+      .from(this.bucket)
+      .upload(path, body, {
+        contentType,
+        upsert: true,
+      });
     if (error) {
       this.logger.error(`Storage upload failed: ${error.message}`);
       throw new ServiceUnavailableException(
@@ -82,9 +84,9 @@ export class StorageService implements OnModuleInit {
     if (error || !data?.signedUrl) {
       const message = error?.message ?? 'no url returned';
       this.logger.error(`Signed URL failed: ${message}`);
-      const missing =
-        /not found|does not exist|404|Object not found/i.test(message) ||
-        !data?.signedUrl;
+      const missing = /not found|does not exist|404|Object not found/i.test(
+        message,
+      );
       if (missing) {
         throw new ServiceUnavailableException({
           code: 'STORAGE_OBJECT_MISSING',
@@ -119,7 +121,9 @@ export class StorageService implements OnModuleInit {
 
   async removeObject(path: string): Promise<void> {
     if (!this.client || !path) return;
-    const { error } = await this.client.storage.from(this.bucket).remove([path]);
+    const { error } = await this.client.storage
+      .from(this.bucket)
+      .remove([path]);
     if (error) {
       this.logger.warn(`Storage remove skipped: ${error.message}`);
     }

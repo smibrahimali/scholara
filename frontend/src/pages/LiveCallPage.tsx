@@ -42,6 +42,7 @@ export function LiveCallPage() {
     stream,
     error: mediaError,
     stop: stopMedia,
+    retry: retryMic,
   } = useCallMedia(canSpeak);
 
   const { listening, interim, error: sttError, mode, stopAll: stopStt } =
@@ -50,6 +51,7 @@ export function LiveCallPage() {
   const {
     status: rtcStatus,
     peerName,
+    peerLeft,
     error: rtcError,
   } = useWebRtcCall({
     callId,
@@ -71,6 +73,7 @@ export function LiveCallPage() {
       toast.success('Call ended — transcript saved');
       void queryClient.invalidateQueries({ queryKey: ['call', callId] });
       void queryClient.invalidateQueries({ queryKey: ['calls'] });
+      void queryClient.invalidateQueries({ queryKey: ['call-requests'] });
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       navigate(historyPath);
     },
@@ -116,7 +119,9 @@ export function LiveCallPage() {
         ? `Connected with ${peerName}`
         : 'Audio connected'
       : rtcStatus === 'waiting'
-        ? 'Waiting for the other person to join…'
+        ? peerLeft
+          ? 'Other person left — waiting for them to rejoin…'
+          : 'Waiting for the other person to join…'
         : rtcStatus === 'connecting'
           ? 'Connecting audio…'
           : rtcStatus === 'error'
@@ -165,6 +170,15 @@ export function LiveCallPage() {
                   <p className="mt-1 text-xs text-destructive">
                     {mediaError || sttError || rtcError}
                   </p>
+                ) : null}
+                {mediaError && canSpeak ? (
+                  <TapButton
+                    type="button"
+                    onClick={retryMic}
+                    className="mt-2 rounded-lg border border-border bg-secondary px-2.5 py-1.5 text-xs font-semibold text-foreground"
+                  >
+                    Retry microphone
+                  </TapButton>
                 ) : null}
               </div>
             </div>
@@ -244,15 +258,6 @@ export function LiveCallPage() {
                 onClick={() => navigate(historyPath)}
               >
                 View call history
-              </TapButton>
-            ) : null}
-
-            {isOpen && isConsultant ? (
-              <TapButton
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background py-3 text-sm font-semibold text-muted-foreground"
-                onClick={leaveCall}
-              >
-                Leave without ending
               </TapButton>
             ) : null}
           </div>

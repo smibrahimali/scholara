@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AccessService } from '../common/access.service';
@@ -46,13 +46,10 @@ export class ChatService {
     user: JwtPayload,
     dto: SendChatMessageDto,
   ): Promise<{ userMessage: ChatMessage; assistantMessage: ChatMessage }> {
-    const userMessage = await this.chatRepo.save(
-      this.chatRepo.create({
-        userId: user.sub,
-        role: 'user',
-        content: dto.content.trim(),
-      }),
-    );
+    const content = dto.content.trim();
+    if (!content) {
+      throw new BadRequestException('Message content is required');
+    }
 
     const history = await this.chatRepo.find({
       where: { userId: user.sub },
@@ -65,12 +62,22 @@ export class ChatService {
     const groqMessages: GroqChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...history.map((msg) => ({
-        role: msg.role as 'user' | 'assistant' | 'system',
+        role: msg.role,
         content: msg.content,
       })),
+      { role: 'user', content },
     ];
 
+    // Call Groq before persisting so failed/rate-limited requests leave no orphan turns.
     const reply = await this.groq.chatCompletion(groqMessages);
+
+    const userMessage = await this.chatRepo.save(
+      this.chatRepo.create({
+        userId: user.sub,
+        role: 'user',
+        content,
+      }),
+    );
 
     const assistantMessage = await this.chatRepo.save(
       this.chatRepo.create({

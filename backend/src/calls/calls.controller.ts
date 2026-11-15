@@ -13,12 +13,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import {
-  ApiBearerAuth,
-  ApiBody,
-  ApiConsumes,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -41,19 +36,13 @@ export class CallsController {
 
   @Get()
   @Roles(UserRole.STUDENT, UserRole.GUARDIAN, UserRole.CONSULTANT)
-  list(
-    @CurrentUser() user: unknown,
-    @Query('studentId') studentId?: string,
-  ) {
+  list(@CurrentUser() user: unknown, @Query('studentId') studentId?: string) {
     return this.callsService.listForUser(user as JwtPayload, studentId);
   }
 
   @Get(':id')
   @Roles(UserRole.STUDENT, UserRole.GUARDIAN, UserRole.CONSULTANT)
-  getOne(
-    @CurrentUser() user: unknown,
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
+  getOne(@CurrentUser() user: unknown, @Param('id', ParseUUIDPipe) id: string) {
     return this.callsService.getById(user as JwtPayload, id);
   }
 
@@ -111,10 +100,7 @@ export class CallsController {
 
   @Post(':id/end')
   @Roles(UserRole.CONSULTANT)
-  end(
-    @CurrentUser() user: unknown,
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
+  end(@CurrentUser() user: unknown, @Param('id', ParseUUIDPipe) id: string) {
     return this.callsService.end(user as JwtPayload, id);
   }
 

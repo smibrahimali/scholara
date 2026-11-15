@@ -148,10 +148,7 @@ export class ApplicationsService {
         const nextStep = await this.stepsRepo.findOne({
           where: { applicationId, stepNumber: stepNumber + 1 },
         });
-        if (
-          nextStep &&
-          nextStep.status === ApplicationStepStatus.NOT_STARTED
-        ) {
+        if (nextStep && nextStep.status === ApplicationStepStatus.NOT_STARTED) {
           nextStep.status = ApplicationStepStatus.IN_PROGRESS;
           await this.stepsRepo.save(nextStep);
         }

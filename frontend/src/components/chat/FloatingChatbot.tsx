@@ -71,6 +71,10 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
     e.preventDefault();
     const content = draft.trim();
     if (!content || sendMutation.isPending) return;
+    if (content.length > 4000) {
+      toast.error('Message must be 4000 characters or fewer');
+      return;
+    }
     sendMutation.mutate(content);
   }
 
@@ -122,7 +126,14 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
                   Loading conversation…
                 </p>
               ) : null}
-              {!messagesQuery.isLoading && messages.length === 0 ? (
+              {messagesQuery.isError ? (
+                <p className="text-center text-xs font-semibold text-destructive">
+                  Could not load chat history. Try again shortly.
+                </p>
+              ) : null}
+              {!messagesQuery.isLoading &&
+              !messagesQuery.isError &&
+              messages.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-[rgba(120,53,15,0.15)] bg-gold-soft/40 px-3 py-4 text-center">
                   <p className="font-serif text-sm font-semibold text-foreground">
                     {studentId
@@ -159,8 +170,9 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
             >
               <textarea
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
+                onChange={(e) => setDraft(e.target.value.slice(0, 4000))}
                 rows={1}
+                maxLength={4000}
                 placeholder="Ask Scholara…"
                 className="max-h-24 min-h-11 flex-1 resize-none rounded-xl border border-black/[0.06] bg-background px-3 py-2.5 text-sm outline-none focus:shadow-[0_0_0_2px_rgba(212,175,55,0.35)]"
                 onKeyDown={(e) => {

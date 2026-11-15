@@ -9,12 +9,7 @@ import { StudentsService } from './students.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      StudentProfile,
-      Document,
-      Application,
-      CallNote,
-    ]),
+    TypeOrmModule.forFeature([StudentProfile, Document, Application, CallNote]),
   ],
   controllers: [StudentsController],
   providers: [StudentsService],

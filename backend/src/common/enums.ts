@@ -30,3 +30,11 @@ export enum ApplicationStepStatus {
   COMPLETED = 'COMPLETED',
   SKIPPED = 'SKIPPED',
 }
+
+export enum CallRequestStatus {
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  CANCELLED = 'CANCELLED',
+  COMPLETED = 'COMPLETED',
+}

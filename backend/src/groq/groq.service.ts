@@ -66,6 +66,11 @@ export class GroqService implements OnModuleInit {
 
   async chatCompletion(messages: GroqChatMessage[]): Promise<string> {
     const apiKey = this.requireApiKey();
+    if (!messages.some((m) => m.content?.trim())) {
+      throw new ServiceUnavailableException(
+        'No message content to send to AI.',
+      );
+    }
 
     let response: Response;
     try {
@@ -80,6 +85,7 @@ export class GroqService implements OnModuleInit {
           messages,
           temperature: 0.4,
         }),
+        signal: AbortSignal.timeout(30_000),
       });
     } catch (error) {
       const message =
@@ -90,13 +96,13 @@ export class GroqService implements OnModuleInit {
       );
     }
 
-    const payload = (await response.json()) as GroqChatCompletionResponse;
+    const payload = await this.readJson<GroqChatCompletionResponse>(response);
 
     if (!response.ok) {
       const detail = payload.error?.message ?? `HTTP ${response.status}`;
       this.logger.error(`Groq API error: ${detail}`);
       throw new ServiceUnavailableException(
-        `Groq request failed: ${detail}`,
+        'AI temporarily unavailable. Try again shortly.',
       );
     }
 
@@ -134,6 +140,7 @@ export class GroqService implements OnModuleInit {
             Authorization: `Bearer ${apiKey}`,
           },
           body: form,
+          signal: AbortSignal.timeout(30_000),
         },
       );
     } catch (error) {
@@ -145,20 +152,33 @@ export class GroqService implements OnModuleInit {
       );
     }
 
-    const payload = (await response.json()) as {
+    const payload = await this.readJson<{
       text?: string;
       error?: { message?: string };
-    };
+    }>(response);
 
     if (!response.ok) {
       const detail = payload.error?.message ?? `HTTP ${response.status}`;
       this.logger.error(`Groq transcription error: ${detail}`);
       throw new ServiceUnavailableException(
-        `Groq transcription failed: ${detail}`,
+        'Speech transcription temporarily unavailable. Try again shortly.',
       );
     }
 
     const text = payload.text?.trim() ?? '';
     return text;
+  }
+
+  private async readJson<T>(response: Response): Promise<T> {
+    try {
+      return (await response.json()) as T;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Invalid JSON body';
+      this.logger.error(`Groq response parse failed: ${message}`);
+      throw new ServiceUnavailableException(
+        'AI temporarily unavailable. Try again shortly.',
+      );
+    }
   }
 }

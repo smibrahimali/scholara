@@ -180,3 +180,80 @@ export interface HandoverResult {
   };
   message: string;
 }
+
+export type CallRequestStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'CANCELLED'
+  | 'COMPLETED';
+
+export interface CallRequestItem {
+  id: string;
+  studentId: string;
+  consultantId: string;
+  scheduledFor: string;
+  status: CallRequestStatus;
+  studentNote: string | null;
+  consultantNote: string | null;
+  callSessionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  studentName: string | null;
+  consultantName: string | null;
+  consultantTitle: string | null;
+}
+
+export interface DirectMessageItem {
+  id: string;
+  conversationId: string;
+  chatSessionId?: string | null;
+  senderUserId: string;
+  senderName: string;
+  body: string;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface ConversationItem {
+  id: string;
+  studentId: string;
+  consultantId: string;
+  studentName: string | null;
+  consultantName: string | null;
+  consultantTitle: string | null;
+  updatedAt: string;
+  createdAt: string;
+  lastMessage: DirectMessageItem | null;
+}
+
+export type ChatRequestStatus = CallRequestStatus;
+
+export interface ChatRequestItem {
+  id: string;
+  studentId: string;
+  consultantId: string;
+  scheduledFor: string;
+  status: ChatRequestStatus;
+  studentNote: string | null;
+  consultantNote: string | null;
+  chatSessionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  studentName: string | null;
+  consultantName: string | null;
+  consultantTitle: string | null;
+}
+
+export interface ChatSessionItem {
+  id: string;
+  studentId: string;
+  consultantId: string;
+  conversationId: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  studentName: string | null;
+  consultantName: string | null;
+}

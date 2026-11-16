@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Eye, FileText, Upload } from 'lucide-react';
 import { toast } from 'sonner';
+import { EmptyState } from '../components/ivy/EmptyState';
 import { PageMotion } from '../components/ivy/PageMotion';
 import { ScreenTitle } from '../components/ivy/ScreenTitle';
 import { StatusBadge, toDocStatus } from '../components/ivy/StatusBadge';
@@ -34,6 +35,7 @@ function DocCard({
   canReview,
   canUpload,
   uploading,
+  uploadLocked,
   reviewing,
   onApprove,
   onReject,
@@ -44,6 +46,8 @@ function DocCard({
   canReview: boolean;
   canUpload: boolean;
   uploading: boolean;
+  /** True while any upload mutation is in flight (disables sibling Upload buttons). */
+  uploadLocked: boolean;
   reviewing: boolean;
   onApprove: () => void;
   onReject: (reason: string) => void;
@@ -77,6 +81,11 @@ function DocCard({
             {doc.documentType} · Updated {formatDisplayDate(doc.updatedAt)}
           </p>
           <StatusBadge status={status} />
+          {doc.status === 'VERIFIED' ? (
+            <p className="status-success mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold">
+              Verified by Consultant
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -88,8 +97,8 @@ function DocCard({
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden"
           >
-            <div className="mt-4 rounded-xl border border-destructive/20 bg-destructive-soft p-3.5">
-              <p className="text-xs font-bold uppercase tracking-wider text-destructive">
+            <div className="status-danger mt-4 rounded-xl p-3.5">
+              <p className="text-xs font-medium uppercase tracking-wider">
                 Reason from Consultant
               </p>
               <p className="mt-1.5 text-sm text-foreground">
@@ -104,9 +113,9 @@ function DocCard({
         <div className="mt-4 flex flex-wrap gap-2.5">
           {showUpload ? (
             <TapButton
-              disabled={uploading}
+              disabled={uploading || uploadLocked}
               onClick={onPickFile}
-              className="btn-metallic flex flex-1 items-center justify-center gap-2 rounded-xl text-sm"
+              className="btn-primary flex flex-1 items-center justify-center gap-2 rounded-xl text-sm"
             >
               <Upload className="h-4 w-4" />
               {uploading
@@ -119,7 +128,7 @@ function DocCard({
           {showView ? (
             <TapButton
               onClick={onView}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-card text-sm font-semibold text-muted-foreground"
+              className="btn-outline flex flex-1 items-center justify-center gap-2 rounded-xl text-sm font-semibold"
             >
               <Eye className="h-4 w-4 text-gold-ink" /> View file
             </TapButton>
@@ -127,21 +136,20 @@ function DocCard({
         </div>
       )}
 
-      {canReview &&
-      (doc.status === 'UNDER_REVIEW' || doc.status === 'REJECTED') ? (
+      {canReview && doc.status === 'UNDER_REVIEW' ? (
         <div className="mt-5 space-y-2.5">
           <div className="flex gap-2.5">
             <TapButton
               disabled={reviewing}
               onClick={onApprove}
-              className="flex flex-1 items-center justify-center rounded-xl bg-success text-sm font-semibold text-white disabled:opacity-50"
+              className="btn-primary flex flex-1 items-center justify-center rounded-xl bg-success border-success text-sm font-semibold text-white"
             >
               {reviewing ? 'Saving…' : 'Approve'}
             </TapButton>
             <TapButton
               disabled={reviewing}
               onClick={() => setRejecting(true)}
-              className="flex flex-1 items-center justify-center rounded-xl border border-destructive/30 bg-destructive-soft text-sm font-semibold text-destructive disabled:opacity-50"
+              className="btn-outline flex flex-1 items-center justify-center rounded-xl border-destructive/40 text-sm font-semibold text-destructive"
             >
               Reject
             </TapButton>
@@ -219,6 +227,9 @@ export function DocumentsPage({
       toast.success('Document review saved');
       void queryClient.invalidateQueries({ queryKey: ['documents'] });
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      void queryClient.invalidateQueries({ queryKey: ['consultant-students'] });
+      void queryClient.invalidateQueries({ queryKey: ['applications'] });
+      void queryClient.invalidateQueries({ queryKey: ['chat-messages'] });
     },
     onError: () => toast.error('Review failed'),
   });
@@ -231,6 +242,9 @@ export function DocumentsPage({
       setUploadTargetId(null);
       void queryClient.invalidateQueries({ queryKey: ['documents'] });
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      void queryClient.invalidateQueries({ queryKey: ['consultant-students'] });
+      void queryClient.invalidateQueries({ queryKey: ['applications'] });
+      void queryClient.invalidateQueries({ queryKey: ['chat-messages'] });
     },
     onError: (err: unknown) => {
       const message =
@@ -268,16 +282,26 @@ export function DocumentsPage({
   const counts = {
     verified: data.filter((d) => d.status === 'VERIFIED').length,
     review: data.filter((d) => d.status === 'UNDER_REVIEW').length,
+    missing: data.filter((d) => d.status === 'NOT_UPLOADED').length,
     rejected: data.filter((d) => d.status === 'REJECTED').length,
   };
   const canUpload = user?.role === 'STUDENT';
+  const isGuardian = user?.role === 'GUARDIAN';
+  const allVerified =
+    data.length > 0 && counts.verified === data.length;
 
   return (
     <PageMotion>
-      <div className="space-y-6">
+      <div className="space-y-8">
         <ScreenTitle
           eyebrow="Secure Records"
-          title={canReview ? 'Student documents' : 'Your Documents'}
+          title={
+            canReview
+              ? 'Student Documents'
+              : isGuardian
+                ? 'Student Documents'
+                : 'Your Documents'
+          }
         />
         <input
           ref={fileInputRef}
@@ -311,40 +335,46 @@ export function DocumentsPage({
             uploadMutation.mutate({ id, file });
           }}
         />
-        <div className="grid grid-cols-3 gap-3 text-center">
+        <div className="grid grid-cols-4 gap-2 text-center">
           {(
             [
               ['Verified', counts.verified, 'text-success'],
               ['In Review', counts.review, 'text-gold-ink'],
+              ['Missing', counts.missing, 'text-muted-foreground'],
               ['Rejected', counts.rejected, 'text-destructive'],
             ] as const
           ).map(([label, n, color]) => (
-            <div key={label} className="ivy-card py-3.5">
-              <p className={cn('font-serif text-2xl font-semibold', color)}>
+            <div key={label} className="ivy-card py-3">
+              <p className={cn('font-sans text-xl font-semibold', color)}>
                 {n}
               </p>
-              <p className="mt-0.5 text-[11px] font-medium text-muted-foreground">
+              <p className="mt-0.5 text-[10px] font-medium text-muted-foreground">
                 {label}
               </p>
             </div>
           ))}
         </div>
+        {allVerified ? (
+          <p className="status-success rounded-xl px-3.5 py-2.5 text-center text-xs font-semibold">
+            All {data.length} documents verified by consultant
+          </p>
+        ) : null}
         {data.length === 0 ? (
-          <div className="ivy-card flex flex-col items-center px-6 py-12 text-center">
-            <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-gold-ink">
-              <FileText className="h-5 w-5" />
-            </span>
-            <p className="font-serif text-lg font-semibold text-foreground">
-              No documents yet
-            </p>
-            <p className="mt-2 max-w-xs text-sm text-muted-foreground">
-              {canUpload
-                ? 'Upload required files so your consultant can begin review.'
-                : 'This student has not uploaded any documents yet.'}
-            </p>
+          <div className="ivy-card !p-0">
+            <EmptyState
+              icon={FileText}
+              title="No documents yet"
+              description={
+                canUpload
+                  ? 'Upload required files so your consultant can begin review.'
+                  : isGuardian
+                    ? 'Your linked student has not uploaded any documents yet.'
+                    : 'This student has not uploaded any documents yet.'
+              }
+            />
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-5">
             {data.map((doc) => (
               <DocCard
                 key={doc.id}
@@ -354,6 +384,7 @@ export function DocumentsPage({
                 uploading={
                   uploadMutation.isPending && uploadTargetId === doc.id
                 }
+                uploadLocked={uploadMutation.isPending}
                 reviewing={reviewMutation.isPending}
                 onApprove={() => {
                   if (reviewMutation.isPending) return;

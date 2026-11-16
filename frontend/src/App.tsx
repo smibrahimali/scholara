@@ -63,16 +63,55 @@ export default function App() {
               }
             >
               <Route index element={<HomeRedirect />} />
-              <Route path="documents" element={<DocumentsPage />} />
-              <Route path="applications" element={<ApplicationsPage />} />
+              <Route
+                path="documents"
+                element={
+                  <ProtectedRoute roles={['STUDENT', 'GUARDIAN']}>
+                    <DocumentsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="applications"
+                element={
+                  <ProtectedRoute roles={['STUDENT', 'GUARDIAN']}>
+                    <ApplicationsPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="profile" element={<ProfilePage />} />
-              <Route path="emails" element={<EmailLogPage />} />
-              <Route path="consultant" element={<MyConsultantPage />} />
-              <Route path="messages" element={<MessagesPage />} />
+              <Route
+                path="emails"
+                element={
+                  <ProtectedRoute roles={['STUDENT', 'GUARDIAN']}>
+                    <EmailLogPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="consultant"
+                element={
+                  <ProtectedRoute roles={['STUDENT', 'GUARDIAN']}>
+                    <MyConsultantPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="messages"
+                element={
+                  <ProtectedRoute roles={['STUDENT', 'GUARDIAN']}>
+                    <MessagesPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="live-call/:callId" element={<LiveCallPage />} />
               <Route
                 path="applications/:id"
-                element={<ApplicationDetailPage />}
+                element={
+                  <ProtectedRoute roles={['STUDENT', 'GUARDIAN']}>
+                    <ApplicationDetailPage />
+                  </ProtectedRoute>
+                }
               />
               <Route
                 path="students/:studentId"

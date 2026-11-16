@@ -41,11 +41,9 @@ function DetailStepNotes({
       queryClient.setQueryData(['application', applicationId], updated);
       void queryClient.invalidateQueries({
         queryKey: ['applications'],
-        refetchType: 'none',
       });
       void queryClient.invalidateQueries({
         queryKey: ['dashboard'],
-        refetchType: 'none',
       });
       toast.success('Notes saved');
     },
@@ -108,7 +106,7 @@ export function ApplicationDetailPage() {
     ? `/app/students/${studentId}/applications`
     : '/app/applications';
   const consultantName =
-    data.student?.consultant?.user.fullName ?? 'Assigned consultant';
+    data.student?.consultant?.user?.fullName ?? 'Assigned consultant';
   const notesByStep = new Map(
     (data.steps ?? []).map((s) => [s.stepNumber, s.notes] as const),
   );

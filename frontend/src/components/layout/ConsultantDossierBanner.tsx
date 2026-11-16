@@ -13,7 +13,7 @@ export function ConsultantDossierBanner({ studentId }: { studentId: string }) {
     staleTime: 60_000,
   });
 
-  const name = data?.student.fullName;
+  const name = data?.student?.fullName;
 
   return (
     <div
@@ -28,7 +28,7 @@ export function ConsultantDossierBanner({ studentId }: { studentId: string }) {
       <div className="flex min-w-0 items-center gap-3">
         <Link
           to="/app"
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary text-gold-ink no-underline shadow-[inset_0_0_0_1px_rgba(120,53,15,0.12)]"
+          className="ivy-medallion inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full no-underline"
           aria-label="Back to assigned students"
         >
           <ArrowLeft className="h-4 w-4" />

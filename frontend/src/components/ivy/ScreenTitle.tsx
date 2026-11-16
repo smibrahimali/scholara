@@ -10,7 +10,7 @@ export function ScreenTitle({
   return (
     <div className="mb-5 min-w-0">
       <p className="label-caps truncate">{eyebrow}</p>
-      <h1 className="mt-1 break-words font-serif text-[28px] font-semibold leading-tight text-foreground">
+      <h1 className="mt-1 break-words font-serif text-[28px] font-semibold leading-tight text-[#1E2430]">
         {title}
       </h1>
       <HeraldicDivider className="mt-3 max-w-[9rem]" />

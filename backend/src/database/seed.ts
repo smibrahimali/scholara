@@ -251,23 +251,23 @@ async function seed() {
   const universityRepo = dataSource.getRepository(University);
   const pstu = await universityRepo.save(
     universityRepo.create({
-      name: 'Punjab Science and Technology University',
-      city: 'Lahore',
-      country: 'Pakistan',
+      name: 'Qatar University',
+      city: 'Doha',
+      country: 'Qatar',
     }),
   );
   const ivu = await universityRepo.save(
     universityRepo.create({
-      name: 'Indus Valley University',
-      city: 'Karachi',
-      country: 'Pakistan',
+      name: 'American University of Sharjah',
+      city: 'Sharjah',
+      country: 'UAE',
     }),
   );
   const kit = await universityRepo.save(
     universityRepo.create({
-      name: 'KIT',
-      city: 'Karachi',
-      country: 'Pakistan',
+      name: 'Khalifa University',
+      city: 'Abu Dhabi',
+      country: 'UAE',
     }),
   );
 
@@ -322,16 +322,18 @@ async function seed() {
       universityId: kit.id,
       programId: kitCs.id,
       status: ApplicationStatus.ACCEPTED,
-      feeAmount: '148000',
-      feeCurrency: 'PKR',
+      feeAmount: '45000',
+      feeCurrency: 'AED',
       feeDueDate: '2026-11-15',
       decisionNotes: 'Offer accepted pending fee confirmation.',
     }),
   );
 
+  // completedThrough = first IN_PROGRESS step; all earlier steps COMPLETED
+  // (strictly sequential — never COMPLETED after an unfinished/skipped gap).
   await createSteps(dataSource, pstuApp.id, 6);
   await createSteps(dataSource, ivuApp.id, 8);
-  await createSteps(dataSource, kitApp.id, 11, [7]);
+  await createSteps(dataSource, kitApp.id, 9);
 
   const documentRepo = dataSource.getRepository(Document);
   const reviewRepo = dataSource.getRepository(DocumentReview);
@@ -395,27 +397,27 @@ async function seed() {
     emailRepo.create({
       applicationId: ivuApp.id,
       subject: 'Entry Test Result and Merit List Schedule',
-      sender: 'admissions@indusvalley.edu.demo',
+      sender: 'admissions@aus.edu.demo',
       sentAt: new Date('2026-11-01T10:00:00.000Z'),
-      body: 'Dear Ali Raza,\n\nYour entry test score is 71/100. The merit list will be published on 12 November.\n\nRegards,\nIndus Valley University Admissions',
+      body: 'Dear Ali Raza,\n\nYour entry test score is 71/100. The merit list will be published on 12 November.\n\nRegards,\nAmerican University of Sharjah Admissions',
     }),
   );
   await emailRepo.save(
     emailRepo.create({
       applicationId: kitApp.id,
-      subject: 'Fee Challan and Enrollment Deadline',
-      sender: 'finance@kit.edu.demo',
+      subject: 'Fee Invoice and Enrollment Deadline',
+      sender: 'finance@ku.ac.ae.demo',
       sentAt: new Date('2026-11-03T09:00:00.000Z'),
-      body: 'Dear Ali Raza,\n\nCongratulations on your admission offer. Your fee of PKR 148,000 is due by 15 November 2026.\n\nRegards,\nKIT Finance Office',
+      body: 'Dear Ali Raza,\n\nCongratulations on your admission offer. Your fee of AED 45,000 is due by 15 November 2026.\n\nRegards,\nKhalifa University Finance Office',
     }),
   );
   await emailRepo.save(
     emailRepo.create({
       applicationId: pstuApp.id,
       subject: 'Application Received',
-      sender: 'admissions@pstu.edu.demo',
+      sender: 'admissions@qu.edu.qa.demo',
       sentAt: new Date('2026-10-20T08:30:00.000Z'),
-      body: 'Dear Ali Raza,\n\nWe have received your application to BS Computer Science. Initial verification is in progress.\n\nRegards,\nPSTU Admissions',
+      body: 'Dear Ali Raza,\n\nWe have received your application to BS Computer Science. Initial verification is in progress.\n\nRegards,\nQatar University Admissions',
     }),
   );
 
@@ -428,18 +430,18 @@ async function seed() {
       startedAt: new Date('2026-10-28T14:00:00.000Z'),
       endedAt: new Date('2026-10-28T14:25:00.000Z'),
       transcript:
-        'Discussed KIT fee deadline of 15 November 2026 and Indus Valley merit list on 12 November. Student will re-upload blurred transcript.',
+        'Discussed Khalifa University fee deadline of 15 November 2026 and American University of Sharjah merit list on 12 November. Student will re-upload blurred transcript.',
     }),
   );
   await noteRepo.save(
     noteRepo.create({
       callSessionId: call.id,
       summary:
-        'Reviewed application progress. KIT offer fee pending; Indus Valley waitlisted pending merit list; transcript rejected and needs re-upload.',
+        'Reviewed application progress. Khalifa University offer fee pending; American University of Sharjah waitlisted pending merit list; transcript rejected and needs re-upload.',
       actionItems:
-        '1) Student re-uploads transcript\n2) Confirm KIT fee payment plan\n3) Monitor Indus Valley merit list on 12 November',
+        '1) Student re-uploads transcript\n2) Confirm Khalifa University fee payment plan\n3) Monitor American University of Sharjah merit list on 12 November',
       universitiesDiscussed:
-        'KIT, Indus Valley University, Punjab Science and Technology University',
+        'Khalifa University, American University of Sharjah, Qatar University',
       followUps: 'Follow up on transcript re-upload before 10 November 2026.',
     }),
   );
@@ -454,7 +456,8 @@ async function seed() {
       consultantId: consultant1.id,
       scheduledFor: new Date('2026-11-20T10:00:00.000Z'),
       status: CallRequestStatus.APPROVED,
-      studentNote: 'Want to review KIT fee deadline and transcript re-upload.',
+      studentNote:
+        'Want to review Khalifa University fee deadline and transcript re-upload.',
       consultantNote: null,
       callSessionId: null,
     }),
@@ -472,7 +475,7 @@ async function seed() {
     dmRepo.create({
       conversationId: conversation.id,
       senderUserId: consultant1User.id,
-      body: 'Hi Ali — please re-upload your transcript before the KIT fee deadline. Happy to hop on a quick call if helpful.',
+      body: 'Hi Ali — please re-upload your transcript before the Khalifa University fee deadline. Happy to hop on a quick call if helpful.',
       readAt: null,
     }),
   );

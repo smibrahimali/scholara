@@ -87,58 +87,62 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     try {
       await this.callsService.assertCanJoinLiveCall(user, callId);
+
+      const room = this.room(callId);
+      const existing = await this.server.in(room).fetchSockets();
+      if (existing.length >= 2) {
+        return { ok: false, error: 'Call room is full (2 participants max)' };
+      }
+
+      if (client.data.callId && client.data.callId !== callId) {
+        await client.leave(this.room(client.data.callId));
+      }
+
+      await client.join(room);
+      client.data.callId = callId;
+
+      const peerCount = existing.length + 1;
+      if (existing.length > 0) {
+        client.to(room).emit('peer-joined', {
+          userId: user.sub,
+          fullName: user.fullName,
+          role: user.role,
+        });
+      }
+
+      return {
+        ok: true,
+        peerCount,
+        /** Existing peer should create the WebRTC offer when a new peer joins. */
+        createOffer: false,
+      };
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Cannot join this call';
       return { ok: false, error: message };
     }
-
-    const room = this.room(callId);
-    const existing = await this.server.in(room).fetchSockets();
-    if (existing.length >= 2) {
-      return { ok: false, error: 'Call room is full (2 participants max)' };
-    }
-
-    if (client.data.callId && client.data.callId !== callId) {
-      await client.leave(this.room(client.data.callId));
-    }
-
-    await client.join(room);
-    client.data.callId = callId;
-
-    const peerCount = existing.length + 1;
-    if (existing.length > 0) {
-      client.to(room).emit('peer-joined', {
-        userId: user.sub,
-        fullName: user.fullName,
-        role: user.role,
-      });
-    }
-
-    return {
-      ok: true,
-      peerCount,
-      /** Existing peer should create the WebRTC offer when a new peer joins. */
-      createOffer: false,
-    };
   }
 
   @SubscribeMessage('leave')
   async onLeave(@ConnectedSocket() client: AuthedSocket) {
-    const callId = client.data.callId;
-    const user = client.data.user;
-    if (callId) {
-      const room = this.room(callId);
-      if (user) {
-        client.to(room).emit('peer-left', {
-          userId: user.sub,
-          fullName: user.fullName,
-        });
+    try {
+      const callId = client.data.callId;
+      const user = client.data.user;
+      if (callId) {
+        const room = this.room(callId);
+        if (user) {
+          client.to(room).emit('peer-left', {
+            userId: user.sub,
+            fullName: user.fullName,
+          });
+        }
+        await client.leave(room);
+        client.data.callId = undefined;
       }
-      await client.leave(room);
-      client.data.callId = undefined;
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'Could not leave call room' };
     }
-    return { ok: true };
   }
 
   @SubscribeMessage('signal')

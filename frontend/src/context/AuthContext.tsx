@@ -9,9 +9,14 @@ import {
 } from 'react';
 import { api } from '../services/api';
 import { queryClient } from '../lib/queryClient';
-import { setUnauthorizedListener } from '../lib/authEvents';
+import {
+  setForbiddenListener,
+  setUnauthorizedListener,
+} from '../lib/authEvents';
+import { canAccessPath, homePathForRole } from '../lib/roleHome';
 import {
   clearClientSession,
+  readJwtRole,
   TOKEN_KEY,
   USER_KEY,
 } from '../lib/sessionCleanup';
@@ -36,11 +41,28 @@ function readStoredUser(): AuthUser | null {
   }
 }
 
+/** Drop mismatched token/user pairs that cause consultant 403s on End call. */
+function readInitialSession(): { token: string | null; user: AuthUser | null } {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const user = readStoredUser();
+  if (!token || !user) {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    return { token: null, user: null };
+  }
+  const jwtRole = readJwtRole(token);
+  if (!jwtRole || jwtRole !== user.role) {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    return { token: null, user: null };
+  }
+  return { token, user };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(
-    () => localStorage.getItem(TOKEN_KEY),
-  );
-  const [user, setUser] = useState<AuthUser | null>(() => readStoredUser());
+  const initial = readInitialSession();
+  const [token, setToken] = useState<string | null>(initial.token);
+  const [user, setUser] = useState<AuthUser | null>(initial.user);
 
   const logout = useCallback(() => {
     clearClientSession(queryClient);
@@ -53,7 +75,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(null);
       setUser(null);
     });
-    return () => setUnauthorizedListener(null);
+    setForbiddenListener(() => {
+      // Soft redirect only when the current route is role-mismatched.
+      // Keeps JWT; avoids logging out on incidental permission errors.
+      const path = window.location.pathname;
+      if (path.startsWith('/login')) return;
+      const role = readStoredUser()?.role;
+      if (canAccessPath(role, path)) return;
+      const home = homePathForRole(role);
+      if (path === home || path === `${home}/`) return;
+      window.location.assign(home);
+    });
+    return () => {
+      setUnauthorizedListener(null);
+      setForbiddenListener(null);
+    };
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {

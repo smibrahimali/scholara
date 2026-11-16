@@ -17,8 +17,8 @@ export function SectionMotion({
       initial={reduce ? false : { opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{
-        duration: reduce ? 0 : 0.35,
-        delay: reduce ? 0 : index * 0.08,
+        duration: reduce ? 0 : 0.5,
+        delay: reduce ? 0 : index * 0.06,
         ease: [0.22, 1, 0.36, 1],
       }}
     >

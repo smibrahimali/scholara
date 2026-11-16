@@ -5,21 +5,35 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Repository } from 'typeorm';
+import { Between, In, IsNull, Repository } from 'typeorm';
 import { AccessService } from '../common/access.service';
 import { CallRequestStatus, UserRole } from '../common/enums';
 import { JwtPayload } from '../auth/jwt-payload';
+import { CallRequest } from '../calls/call-request.entity';
 import { StudentProfile } from '../students/student-profile.entity';
 import { ChatRequest } from './chat-request.entity';
 import { ChatSession } from './chat-session.entity';
 import { CreateChatRequestDto } from './dto/create-chat-request.dto';
 import { RejectChatRequestDto } from './dto/reject-chat-request.dto';
 
+const SAME_TIME_WINDOW_MS = 15 * 60_000;
+const BOOKING_WINDOW_DAYS = 10;
+
+function bookingWindowEnd(from = new Date()) {
+  const start = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const end = new Date(start);
+  end.setDate(end.getDate() + BOOKING_WINDOW_DAYS);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
 @Injectable()
 export class ChatRequestsService {
   constructor(
     @InjectRepository(ChatRequest)
     private readonly requestsRepo: Repository<ChatRequest>,
+    @InjectRepository(CallRequest)
+    private readonly callRequestsRepo: Repository<CallRequest>,
     @InjectRepository(StudentProfile)
     private readonly studentsRepo: Repository<StudentProfile>,
     @InjectRepository(ChatSession)
@@ -168,6 +182,9 @@ export class ChatRequestsService {
     if (scheduledFor.getTime() < Date.now() - 60_000) {
       throw new BadRequestException('Pick a future date and time');
     }
+    if (scheduledFor.getTime() > bookingWindowEnd().getTime()) {
+      throw new BadRequestException('Pick a date within the next 10 days');
+    }
 
     const open = await this.requestsRepo.findOne({
       where: {
@@ -180,6 +197,8 @@ export class ChatRequestsService {
         'You already have a pending or approved chat request. Cancel or wait before scheduling another.',
       );
     }
+
+    await this.assertNoSameTimeCallConflict(student.id, scheduledFor);
 
     try {
       const saved = await this.requestsRepo.save(
@@ -201,6 +220,26 @@ export class ChatRequestsService {
         );
       }
       throw error;
+    }
+  }
+
+  private async assertNoSameTimeCallConflict(
+    studentId: string,
+    scheduledFor: Date,
+  ) {
+    const from = new Date(scheduledFor.getTime() - SAME_TIME_WINDOW_MS);
+    const to = new Date(scheduledFor.getTime() + SAME_TIME_WINDOW_MS);
+    const clash = await this.callRequestsRepo.findOne({
+      where: {
+        studentId,
+        status: In([CallRequestStatus.PENDING, CallRequestStatus.APPROVED]),
+        scheduledFor: Between(from, to),
+      },
+    });
+    if (clash) {
+      throw new BadRequestException(
+        'You already have a call scheduled at this time. Pick another time.',
+      );
     }
   }
 

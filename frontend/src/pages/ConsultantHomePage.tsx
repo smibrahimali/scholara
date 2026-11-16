@@ -39,13 +39,15 @@ export function ConsultantHomePage() {
   const pendingCallsQuery = useQuery({
     queryKey: ['call-requests', 'PENDING'],
     queryFn: () => fetchCallRequests({ status: 'PENDING' }),
-    refetchInterval: 8000,
+    refetchInterval: (query) =>
+      query.state.status === 'error' ? false : 8000,
   });
 
   const pendingChatsQuery = useQuery({
     queryKey: ['chat-requests', 'PENDING'],
     queryFn: () => fetchChatRequests({ status: 'PENDING' }),
-    refetchInterval: 8000,
+    refetchInterval: (query) =>
+      query.state.status === 'error' ? false : 8000,
   });
 
   const handoverMutation = useMutation({
@@ -60,6 +62,14 @@ export function ConsultantHomePage() {
       setHandoverFor(null);
       setPeerId('');
       void queryClient.invalidateQueries({ queryKey: ['consultant-students'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      void queryClient.invalidateQueries({ queryKey: ['documents'] });
+      void queryClient.invalidateQueries({ queryKey: ['applications'] });
+      void queryClient.invalidateQueries({ queryKey: ['call-requests'] });
+      void queryClient.invalidateQueries({ queryKey: ['chat-requests'] });
+      void queryClient.invalidateQueries({ queryKey: ['calls'] });
+      void queryClient.invalidateQueries({ queryKey: ['chat-session-open'] });
+      void queryClient.invalidateQueries({ queryKey: ['chat-messages'] });
     },
     onError: (err: unknown) => {
       const message =
@@ -71,12 +81,33 @@ export function ConsultantHomePage() {
 
   if (isLoading) {
     return (
-      <p className="text-sm text-muted-foreground">Loading assigned students…</p>
+      <div className="ivy-card flex flex-col items-center px-6 py-14 text-center">
+        <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-gold-ink">
+          <Users className="h-5 w-5 animate-pulse" />
+        </span>
+        <p className="font-serif text-lg font-semibold text-foreground">
+          Loading roster
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Fetching your assigned students…
+        </p>
+      </div>
     );
   }
   if (error || !data) {
     return (
-      <p className="text-sm text-destructive">Could not load students.</p>
+      <div className="ivy-card flex flex-col items-center px-6 py-14 text-center">
+        <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-destructive-soft text-destructive">
+          <Users className="h-5 w-5" />
+        </span>
+        <p className="font-serif text-lg font-semibold text-foreground">
+          Could not load students
+        </p>
+        <p className="mt-2 max-w-xs text-sm text-muted-foreground">
+          Check that the API is running, then refresh. After reseeding, sign in
+          again so your session matches the new demo data.
+        </p>
+      </div>
     );
   }
 
@@ -87,6 +118,21 @@ export function ConsultantHomePage() {
     <PageMotion>
       <div className="space-y-6">
         <ScreenTitle eyebrow="Consultant desk" title="Assigned students" />
+
+        {!pendingCallsQuery.isLoading &&
+        !pendingChatsQuery.isLoading &&
+        pendingCalls.length === 0 &&
+        pendingChats.length === 0 ? (
+          <div className="ivy-card border border-border/70 bg-secondary/40 px-4 py-3.5">
+            <p className="text-sm font-semibold text-foreground">
+              0 pending call & chat requests
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Your session queue is clear — new student requests will appear
+              here.
+            </p>
+          </div>
+        ) : null}
 
         {pendingCalls.length > 0 ? (
           <div className="ivy-card border border-gold/35 bg-gold-soft/40 p-5">
@@ -99,7 +145,7 @@ export function ConsultantHomePage() {
                 <li key={req.id}>
                   <Link
                     to={`/app/students/${req.studentId}/calls`}
-                    className="flex min-h-12 items-center justify-between gap-2 rounded-xl border border-border bg-card px-4 text-sm font-semibold no-underline transition-colors hover:bg-secondary/70"
+                    className="btn-outline flex min-h-12 items-center justify-between gap-2 rounded-xl px-4 text-sm font-semibold no-underline"
                   >
                     <span className="min-w-0 truncate">
                       <span className="text-foreground">
@@ -135,7 +181,7 @@ export function ConsultantHomePage() {
                 <li key={req.id}>
                   <Link
                     to={`/app/students/${req.studentId}/calls`}
-                    className="flex min-h-12 items-center justify-between gap-2 rounded-xl border border-border bg-card px-4 text-sm font-semibold no-underline transition-colors hover:bg-secondary/70"
+                    className="btn-outline flex min-h-12 items-center justify-between gap-2 rounded-xl px-4 text-sm font-semibold no-underline"
                   >
                     <span className="min-w-0 truncate">
                       <span className="text-foreground">
@@ -162,7 +208,7 @@ export function ConsultantHomePage() {
 
         {data.length === 0 ? (
           <div className="ivy-card flex flex-col items-center px-6 py-12 text-center">
-            <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-gold-ink">
+            <span className="ivy-medallion mb-3 flex h-12 w-12 items-center justify-center rounded-full">
               <Users className="h-5 w-5" />
             </span>
             <p className="font-serif text-lg font-semibold text-foreground">
@@ -178,7 +224,7 @@ export function ConsultantHomePage() {
             {data.map((student) => (
               <article key={student.id} className="ivy-card p-5">
                 <div className="flex items-start gap-3">
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-secondary text-gold-ink">
+                  <span className="ivy-medallion flex h-11 w-11 shrink-0 items-center justify-center rounded-xl">
                     <Users className="h-5 w-5" />
                   </span>
                   <div className="min-w-0 flex-1">
@@ -202,38 +248,38 @@ export function ConsultantHomePage() {
                 <div className="mt-5 flex flex-col gap-2.5">
                   <Link
                     to={`/app/students/${student.id}`}
-                    className="btn-metallic flex min-h-12 items-center justify-center gap-1 rounded-xl text-sm font-semibold no-underline"
+                    className="btn-primary flex min-h-12 items-center justify-center gap-1 rounded-xl text-sm font-semibold no-underline"
                   >
                     Open dossier <ChevronRight className="h-4 w-4" />
                   </Link>
                   <div className="grid grid-cols-2 gap-2">
                     <Link
                       to={`/app/students/${student.id}/messages`}
-                      className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border bg-card text-sm font-semibold text-foreground no-underline"
+                      className="btn-outline flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-semibold no-underline"
                     >
                       <MessageCircle className="h-4 w-4 text-gold-ink" /> Chat
                     </Link>
                     <Link
                       to={`/app/students/${student.id}/calls`}
-                      className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border bg-card text-sm font-semibold text-foreground no-underline"
+                      className="btn-outline flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-semibold no-underline"
                     >
                       <Phone className="h-4 w-4 text-gold-ink" /> Calls
                     </Link>
                   </div>
                   <Link
                     to={`/app/students/${student.id}/documents`}
-                    className="flex min-h-11 items-center justify-center rounded-xl border border-border bg-card text-sm font-semibold text-muted-foreground no-underline"
+                    className="btn-outline flex min-h-11 items-center justify-center rounded-xl text-sm font-semibold no-underline"
                   >
                     Documents
                   </Link>
                   <Link
                     to={`/app/students/${student.id}/emails`}
-                    className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border bg-card text-sm font-semibold text-muted-foreground no-underline"
+                    className="btn-outline flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-semibold no-underline"
                   >
                     <Mail className="h-4 w-4" /> Applied emails
                   </Link>
                   <TapButton
-                    className="flex min-h-11 items-center justify-center rounded-xl border border-dashed border-border text-sm font-semibold text-muted-foreground"
+                    className="btn-outline flex min-h-11 items-center justify-center rounded-xl border-dashed text-sm font-semibold"
                     onClick={() => {
                       setHandoverFor(student.id);
                       setPeerId('');
@@ -261,14 +307,14 @@ export function ConsultantHomePage() {
                       </select>
                       <div className="flex gap-2">
                         <TapButton
-                          className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground"
+                          className="btn-primary flex-1 rounded-xl py-2.5 text-sm font-semibold"
                           disabled={!peerId || handoverMutation.isPending}
                           onClick={() => handoverMutation.mutate()}
                         >
                           Confirm handover
                         </TapButton>
                         <TapButton
-                          className="rounded-xl border border-border px-3 py-2.5 text-sm font-semibold text-muted-foreground"
+                          className="btn-outline rounded-xl px-3 py-2.5 text-sm font-semibold"
                           onClick={() => setHandoverFor(null)}
                         >
                           Cancel

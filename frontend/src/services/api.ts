@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { queryClient } from '../lib/queryClient';
 import { clearClientSession } from '../lib/sessionCleanup';
-import { notifyUnauthorized } from '../lib/authEvents';
+import { notifyForbidden, notifyUnauthorized } from '../lib/authEvents';
 
 const baseURL =
   (import.meta.env.VITE_API_URL as string | undefined) ??
@@ -50,6 +50,11 @@ api.interceptors.response.use(
       if (!window.location.pathname.startsWith('/login')) {
         window.location.assign('/login');
       }
+    }
+
+    // Permission denied: leave the session intact, but leave the forbidden surface.
+    if (status === 403 && !url.includes('/auth/demo-login')) {
+      notifyForbidden();
     }
 
     return Promise.reject(error);

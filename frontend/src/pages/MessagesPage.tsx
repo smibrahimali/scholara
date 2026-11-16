@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   MessageCircle,
@@ -14,6 +14,7 @@ import { TapButton } from '../components/ivy/TapButton';
 import { useAuth } from '../context/AuthContext';
 import { useMessagingSocket } from '../hooks/useMessagingSocket';
 import { cn } from '../lib/cn';
+import { getBackPath } from '../lib/navigation';
 import {
   endChatSession,
   fetchConversationMessages,
@@ -37,6 +38,7 @@ function formatTime(iso: string) {
 export function MessagesPage({ studentId }: { studentId?: string }) {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const params = useParams<{ studentId?: string }>();
   const resolvedStudentId = studentId ?? params.studentId;
   const queryClient = useQueryClient();
@@ -100,8 +102,12 @@ export function MessagesPage({ studentId }: { studentId?: string }) {
 
   useEffect(() => {
     if (!conversationId || !openSession) return;
-    void markConversationRead(conversationId).catch(() => undefined);
-  }, [conversationId, openSession, historyQuery.dataUpdatedAt]);
+    void markConversationRead(conversationId)
+      .then(() => {
+        void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      })
+      .catch(() => undefined);
+  }, [conversationId, openSession, historyQuery.dataUpdatedAt, queryClient]);
 
   const messages = useMemo(() => {
     const history = historyQuery.data ?? [];
@@ -130,6 +136,15 @@ export function MessagesPage({ studentId }: { studentId?: string }) {
   });
 
   useEffect(() => {
+    return () => {
+      if (typingTimeout.current) {
+        clearTimeout(typingTimeout.current);
+        typingTimeout.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, peerTyping]);
 
@@ -153,7 +168,12 @@ export function MessagesPage({ studentId }: { studentId?: string }) {
       setLiveMessages([]);
       void queryClient.invalidateQueries({ queryKey: ['chat-session-open'] });
       void queryClient.invalidateQueries({ queryKey: ['chat-requests'] });
+      void queryClient.invalidateQueries({ queryKey: ['call-requests'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      void queryClient.invalidateQueries({ queryKey: ['consultant-students'] });
+      void queryClient.invalidateQueries({ queryKey: ['chat-messages'] });
       void queryClient.removeQueries({ queryKey: ['messaging-messages'] });
+      void queryClient.removeQueries({ queryKey: ['messaging-conversation'] });
       navigate(schedulePath);
     },
     onError: () => toast.error('Could not end chat'),
@@ -209,10 +229,11 @@ export function MessagesPage({ studentId }: { studentId?: string }) {
         openSession?.consultantName ??
         'Consultant';
 
-  const backTo =
+  const backFallback =
     resolvedStudentId && user?.role === 'CONSULTANT'
-      ? `/app/students/${resolvedStudentId}/calls`
-      : '/app/consultant';
+      ? `/app/students/${resolvedStudentId}`
+      : '/app';
+  const backTo = getBackPath(location, backFallback);
 
   if (openSessionQuery.isLoading) {
     return (
@@ -231,21 +252,22 @@ export function MessagesPage({ studentId }: { studentId?: string }) {
           Back
         </Link>
         <div className="ivy-card flex flex-col items-center px-6 py-12 text-center">
-          <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-gold-ink">
+          <span className="ivy-medallion mb-3 flex h-12 w-12 items-center justify-center rounded-full">
             <MessageCircle className="h-5 w-5" />
           </span>
           <p className="font-serif text-lg font-semibold text-foreground">
             No encrypted chat open
           </p>
           <p className="mt-2 max-w-xs text-sm text-muted-foreground">
-            Schedule a 1:1 chat first. After your consultant approves and starts
-            the room, messages appear here — and clear when the chat ends.
+            {readOnly
+              ? 'No live encrypted room right now. Guardians can follow updates from Support once the student and consultant open a chat.'
+              : 'No live room yet. Go back to Support, schedule a 1:1 chat below the consultant card, and return here after your consultant starts the room.'}
           </p>
           <TapButton
-            className="mt-5 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground"
+            className="btn-outline mt-5 rounded-xl px-4 py-3 text-sm font-semibold"
             onClick={() => navigate(schedulePath)}
           >
-            Schedule 1:1 chat
+            Back to Support
           </TapButton>
         </div>
       </PageMotion>
@@ -325,7 +347,7 @@ export function MessagesPage({ studentId }: { studentId?: string }) {
             ) : null}
             {!historyQuery.isLoading && messages.length === 0 ? (
               <div className="flex flex-col items-center px-4 py-10 text-center">
-                <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-gold-ink">
+                <span className="ivy-medallion mb-3 flex h-12 w-12 items-center justify-center rounded-full">
                   <MessageCircle className="h-5 w-5" />
                 </span>
                 <p className="font-serif text-base font-semibold text-foreground">
@@ -399,7 +421,7 @@ export function MessagesPage({ studentId }: { studentId?: string }) {
                 disabled={
                   !draft.trim() || sending || restSendMutation.isPending
                 }
-                className="btn-metallic flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
+                className="btn-primary flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
                 aria-label="Send message"
               >
                 <Send className="h-4 w-4" />

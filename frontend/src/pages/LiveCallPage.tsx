@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { LogOut, Mic, MicOff, PhoneOff, Radio } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageMotion } from '../components/ivy/PageMotion';
@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCallMedia } from '../hooks/useCallMedia';
 import { useLiveCallTranscription } from '../hooks/useLiveCallTranscription';
 import { useWebRtcCall } from '../hooks/useWebRtcCall';
+import { getBackPath } from '../lib/navigation';
 import { formatDisplayDate } from '../lib/statusMaps';
 import { endCall, fetchCall } from '../services/scholaraApi';
 
@@ -16,6 +17,7 @@ export function LiveCallPage() {
   const { callId } = useParams<{ callId: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
 
   const callQuery = useQuery({
@@ -37,6 +39,7 @@ export function LiveCallPage() {
       ? `/app/students/${call.studentId}/calls`
       : '/app/consultant'
     : '/app';
+  const leavePath = getBackPath(location, historyPath);
 
   const {
     stream,
@@ -62,7 +65,7 @@ export function LiveCallPage() {
   const leaveCall = () => {
     stopStt();
     stopMedia();
-    navigate(historyPath);
+    navigate(leavePath);
   };
 
   const endMutation = useMutation({
@@ -78,10 +81,24 @@ export function LiveCallPage() {
       navigate(historyPath);
     },
     onError: (err: unknown) => {
-      const message =
-        (err as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? 'Could not end call';
-      toast.error(message);
+      const raw =
+        (err as { response?: { data?: { message?: string | string[] } } })
+          ?.response?.data?.message;
+      const message = Array.isArray(raw)
+        ? raw[0]
+        : typeof raw === 'string'
+          ? raw
+          : 'Could not end call';
+      if (
+        typeof message === 'string' &&
+        message.toLowerCase().includes('insufficient role')
+      ) {
+        toast.error(
+          'Session role mismatch — log out and sign back in as the consultant, then end the call.',
+        );
+        return;
+      }
+      toast.error(message ?? 'Could not end call');
     },
   });
 
@@ -110,8 +127,8 @@ export function LiveCallPage() {
 
   const otherParty =
     user?.role === 'CONSULTANT'
-      ? call.student?.user.fullName
-      : call.consultant?.user.fullName;
+      ? call.student?.user?.fullName
+      : call.consultant?.user?.fullName;
 
   const linkLabel =
     rtcStatus === 'connected'

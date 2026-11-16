@@ -1,22 +1,40 @@
-type UnauthorizedListener = () => void;
+type AuthListener = () => void;
 
-let listener: UnauthorizedListener | null = null;
-let redirecting = false;
+let unauthorizedListener: AuthListener | null = null;
+let forbiddenListener: AuthListener | null = null;
+let unauthorizedRedirecting = false;
+let forbiddenRedirecting = false;
 
 /** AuthProvider registers so axios 401 can clear React state without import cycles. */
-export function setUnauthorizedListener(next: UnauthorizedListener | null) {
-  listener = next;
+export function setUnauthorizedListener(next: AuthListener | null) {
+  unauthorizedListener = next;
+}
+
+/** Soft 403 handler: redirect to role home without wiping the session. */
+export function setForbiddenListener(next: AuthListener | null) {
+  forbiddenListener = next;
 }
 
 export function notifyUnauthorized() {
-  if (redirecting) return;
-  redirecting = true;
+  if (unauthorizedRedirecting) return;
+  unauthorizedRedirecting = true;
   try {
-    listener?.();
+    unauthorizedListener?.();
   } finally {
-    // Allow a later login after redirect settles.
     window.setTimeout(() => {
-      redirecting = false;
+      unauthorizedRedirecting = false;
+    }, 1500);
+  }
+}
+
+export function notifyForbidden() {
+  if (forbiddenRedirecting) return;
+  forbiddenRedirecting = true;
+  try {
+    forbiddenListener?.();
+  } finally {
+    window.setTimeout(() => {
+      forbiddenRedirecting = false;
     }, 1500);
   }
 }

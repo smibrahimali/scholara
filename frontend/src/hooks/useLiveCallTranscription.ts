@@ -78,6 +78,7 @@ export function useLiveCallTranscription(
       recognition.interimResults = true;
       recognition.lang = 'en-US';
       recognition.onresult = (event) => {
+        if (cancelled) return;
         let interimText = '';
         for (let i = event.resultIndex; i < event.results.length; i += 1) {
           const result = event.results[i];
@@ -95,6 +96,7 @@ export function useLiveCallTranscription(
         if (interimText) setInterim(interimText.trim());
       };
       recognition.onerror = (event) => {
+        if (cancelled) return;
         if (event.error === 'not-allowed') {
           setError('Microphone permission denied');
         }

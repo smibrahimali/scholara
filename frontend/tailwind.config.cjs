@@ -71,20 +71,27 @@ module.exports = {
         },
       },
       fontFamily: {
-        serif: ['var(--font-serif)'],
-        sans: ['var(--font-sans)'],
-        display: ['var(--font-serif)'],
-        body: ['var(--font-sans)'],
-        playfair: ['var(--font-serif)'],
-        nunito: ['var(--font-sans)'],
+        sans: ['Inter', 'sans-serif'],
+        serif: ['Playfair Display', 'serif'],
+        display: ['Playfair Display', 'serif'],
+        body: ['Inter', 'sans-serif'],
+        playfair: ['Playfair Display', 'serif'],
       },
       maxWidth: {
         phone: '390px',
       },
       boxShadow: {
-        soft: '0 6px 24px -12px color-mix(in oklab, var(--primary) 25%, transparent)',
+        soft: 'var(--shadow-elev-1)',
+        elev1: 'var(--shadow-elev-1)',
+        elev2: 'var(--shadow-elev-2)',
+        nav: 'var(--shadow-nav)',
+        btn: 'var(--shadow-btn)',
+        fab: 'var(--shadow-fab)',
+        well: 'var(--shadow-inset)',
+        xs: '0 1px 2px rgba(27, 33, 44, 0.04)',
+        '2xs': '0 1px 1px rgba(27, 33, 44, 0.03)',
         phone:
-          '0 40px 80px -30px color-mix(in oklab, var(--primary) 45%, transparent)',
+          '0 24px 48px -28px rgba(27, 33, 44, 0.12)',
       },
       keyframes: {
         'fade-up': {

@@ -25,6 +25,8 @@ Functional requirements: [`docs/Scholara-Specification.docx`](docs/Scholara-Spec
 - My Consultant / call history UI (student & guardian); consultant handover controls
 - Live 1:1 WebRTC audio call (`/app/live-call/:id`) with Socket.IO signaling + live transcription (browser STT / Groq Whisper)
 - Applied Email Log (`GET /api/emails`, Profile → Applied Email Log) aggregating university emails across applications
+- Student↔consultant 1:1 messaging (`/api/messaging`, Socket.IO `/messaging-realtime`) with persisted threads; guardians view-only
+- Call scheduling (`/api/call-requests`): student requests date/time → consultant approve/reject → only consultant starts live WebRTC call from an approved request
 
 **Not implemented yet**
 

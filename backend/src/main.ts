@@ -40,4 +40,7 @@ async function bootstrap() {
   // - /calls-realtime — WebRTC signaling
   // - /messaging-realtime — student↔consultant direct messages
 }
-void bootstrap();
+void bootstrap().catch((err: unknown) => {
+  console.error('Failed to bootstrap NestJS', err);
+  process.exit(1);
+});

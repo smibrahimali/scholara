@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   FileText,
@@ -29,17 +29,36 @@ const CONSULTANT_TABS: Tab[] = [
   { to: '/app/profile', label: 'Profile', Icon: User },
 ];
 
+/** Profile hub includes Support / emails / messages nested under profile IA. */
+function isProfileHubPath(pathname: string) {
+  return (
+    pathname === '/app/profile' ||
+    pathname.startsWith('/app/consultant') ||
+    pathname.startsWith('/app/emails') ||
+    pathname.startsWith('/app/messages')
+  );
+}
+
+function isTabActive(tab: Tab, pathname: string) {
+  if (tab.to === '/app/profile') {
+    return isProfileHubPath(pathname);
+  }
+  if (tab.end) {
+    return pathname === tab.to;
+  }
+  return pathname === tab.to || pathname.startsWith(`${tab.to}/`);
+}
+
 export function BottomTabBar() {
   const { user } = useAuth();
+  const { pathname } = useLocation();
   const tabs = user?.role === 'CONSULTANT' ? CONSULTANT_TABS : STUDENT_TABS;
 
   return (
     <nav
-      className="absolute inset-x-0 bottom-0 z-50 border-t bg-card/85 px-2 pt-2 backdrop-blur-xl"
+      className="absolute inset-x-0 bottom-0 z-50 border-t border-[#EBE8E0]/80 bg-[#F9F8F6]/92 px-2 pt-2 shadow-nav backdrop-blur-md"
       style={{
-        paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
-        borderColor: 'rgba(120, 53, 15, 0.1)',
-        boxShadow: '0 -8px 20px -4px rgba(0, 0, 0, 0.04)',
+        paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 0px))',
       }}
     >
       <ul
@@ -48,51 +67,48 @@ export function BottomTabBar() {
           tabs.length === 2 ? 'grid-cols-2' : 'grid-cols-4',
         )}
       >
-        {tabs.map((tab) => (
-          <li key={tab.to}>
-            <NavLink
-              to={tab.to}
-              end={tab.end}
-              className="relative flex min-h-14 w-full flex-col items-center justify-center gap-1 overflow-visible px-0.5 no-underline"
-            >
-              {({ isActive }) => (
-                <>
-                  <motion.span
-                    animate={{ y: isActive ? -1 : 0 }}
-                    className="flex flex-col items-center gap-0.5"
-                  >
-                    <tab.Icon
-                      className={cn(
-                        'h-5 w-5',
-                        isActive ? 'text-primary' : 'text-muted-foreground',
-                      )}
-                      strokeWidth={isActive ? 2.4 : 1.8}
-                    />
-                    {isActive ? (
-                      <motion.span
-                        layoutId="tab-dot"
-                        className="h-1.5 w-1.5 rounded-full bg-gold"
-                        style={{
-                          boxShadow: '0 0 10px 2px rgba(212, 175, 55, 0.55)',
-                        }}
-                      />
-                    ) : (
-                      <span className="h-1.5 w-1.5" aria-hidden />
-                    )}
-                  </motion.span>
-                  <span
+        {tabs.map((tab) => {
+          const active = isTabActive(tab, pathname);
+          return (
+            <li key={tab.to}>
+              <NavLink
+                to={tab.to}
+                end={tab.end}
+                className="relative flex min-h-14 w-full flex-col items-center justify-center gap-1 overflow-visible px-0.5 no-underline"
+                aria-current={active ? 'page' : undefined}
+              >
+                <motion.span
+                  animate={{ y: active ? -1 : 0 }}
+                  className="flex flex-col items-center gap-0.5"
+                >
+                  <tab.Icon
                     className={cn(
-                      'max-w-full truncate text-center text-[11px] font-bold leading-tight',
-                      isActive ? 'text-primary' : 'text-muted-foreground',
+                      'h-5 w-5',
+                      active ? 'text-[#111827]' : 'text-[#6B7280]',
                     )}
-                  >
-                    {tab.label}
-                  </span>
-                </>
-              )}
-            </NavLink>
-          </li>
-        ))}
+                    strokeWidth={1.5}
+                  />
+                  {active ? (
+                    <motion.span
+                      layoutId="tab-dot"
+                      className="h-1 w-1 rounded-full bg-[#C8963E]"
+                    />
+                  ) : (
+                    <span className="h-1 w-1" aria-hidden />
+                  )}
+                </motion.span>
+                <span
+                  className={cn(
+                    'max-w-full truncate text-center text-[11px] font-medium leading-tight',
+                    active ? 'text-[#1E2430]' : 'text-[#6B7280]',
+                  )}
+                >
+                  {tab.label}
+                </span>
+              </NavLink>
+            </li>
+          );
+        })}
       </ul>
     </nav>
   );

@@ -5,10 +5,10 @@ import type { DocumentStatus } from '../../types/domain';
 export type DocStatus = 'verified' | 'review' | 'rejected' | 'pending';
 
 const badgeStyles: Record<DocStatus, string> = {
-  verified: 'bg-success-soft text-success',
-  review: 'bg-gold-soft text-gold-ink',
-  rejected: 'bg-destructive-soft text-destructive',
-  pending: 'bg-secondary text-muted-foreground',
+  verified: 'bg-[#ECFDF5] text-[#065F46]',
+  review: 'bg-[#FFFBEB] text-[#92400E]',
+  rejected: 'bg-[#FEF2F2] text-[#991B1B]',
+  pending: 'bg-[#FFFBEB] text-[#92400E]',
 };
 
 const badgeLabel: Record<DocStatus, string> = {
@@ -35,7 +35,7 @@ export function StatusBadge({ status }: { status: DocStatus }) {
   return (
     <span
       className={cn(
-        'relative inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold',
+        'relative inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium',
         badgeStyles[status],
       )}
     >

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
+import { CallRequest } from '../calls/call-request.entity';
 import { StudentProfile } from '../students/student-profile.entity';
 import { Conversation } from './conversation.entity';
 import { DirectMessage } from './direct-message.entity';
@@ -20,6 +21,7 @@ import { ChatRequestsService } from './chat-requests.service';
       StudentProfile,
       ChatSession,
       ChatRequest,
+      CallRequest,
     ]),
     AuthModule,
   ],

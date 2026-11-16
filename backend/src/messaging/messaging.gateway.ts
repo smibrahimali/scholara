@@ -85,31 +85,35 @@ export class MessagingGateway
         user,
         conversationId,
       );
+
+      if (
+        client.data.conversationId &&
+        client.data.conversationId !== conversationId
+      ) {
+        await client.leave(this.room(client.data.conversationId));
+      }
+
+      await client.join(this.room(conversationId));
+      client.data.conversationId = conversationId;
+      return { ok: true };
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Cannot join conversation';
       return { ok: false, error: message };
     }
-
-    if (
-      client.data.conversationId &&
-      client.data.conversationId !== conversationId
-    ) {
-      await client.leave(this.room(client.data.conversationId));
-    }
-
-    await client.join(this.room(conversationId));
-    client.data.conversationId = conversationId;
-    return { ok: true };
   }
 
   @SubscribeMessage('leave')
   async onLeave(@ConnectedSocket() client: AuthedSocket) {
-    if (client.data.conversationId) {
-      await client.leave(this.room(client.data.conversationId));
-      client.data.conversationId = undefined;
+    try {
+      if (client.data.conversationId) {
+        await client.leave(this.room(client.data.conversationId));
+        client.data.conversationId = undefined;
+      }
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'Could not leave conversation' };
     }
-    return { ok: true };
   }
 
   @SubscribeMessage('send_message')

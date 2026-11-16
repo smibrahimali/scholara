@@ -26,7 +26,7 @@ function EmailCard({
         className="flex w-full items-start gap-3 text-left"
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-secondary text-gold-ink">
+        <span className="ivy-medallion flex h-11 w-11 shrink-0 items-center justify-center rounded-xl">
           <Mail className="h-5 w-5" />
         </span>
         <div className="min-w-0 flex-1">

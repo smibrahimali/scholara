@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { GroqModule } from '../groq/groq.module';
 import { StudentProfile } from '../students/student-profile.entity';
+import { ChatRequest } from '../messaging/chat-request.entity';
 import { CallSession } from './call-session.entity';
 import { CallNote } from './call-note.entity';
 import { CallRequest } from './call-request.entity';
@@ -18,6 +19,7 @@ import { CallsGateway } from './calls.gateway';
       CallSession,
       CallNote,
       CallRequest,
+      ChatRequest,
       StudentProfile,
     ]),
     GroqModule,

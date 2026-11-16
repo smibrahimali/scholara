@@ -78,10 +78,29 @@ export function useMessagingSocket(options: {
   function sendMessage(body: string) {
     return new Promise<DirectMessageItem>((resolve, reject) => {
       const socket = socketRef.current;
-      if (!socket || !conversationId) {
+      if (!socket || !conversationId || !socket.connected) {
         reject(new Error('Not connected'));
         return;
       }
+
+      let settled = false;
+      const settle = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        socket.off('disconnect', onDisconnect);
+        fn();
+      };
+
+      const onDisconnect = () => {
+        settle(() => reject(new Error('Disconnected before send ack')));
+      };
+
+      const timeout = setTimeout(() => {
+        settle(() => reject(new Error('Send timed out')));
+      }, 12_000);
+
+      socket.once('disconnect', onDisconnect);
       socket.emit(
         'send_message',
         { conversationId, body },
@@ -94,10 +113,10 @@ export function useMessagingSocket(options: {
           if (!ack || !ack.ok) {
             const error =
               ack && 'error' in ack ? ack.error : undefined;
-            reject(new Error(error ?? 'Send failed'));
+            settle(() => reject(new Error(error ?? 'Send failed')));
             return;
           }
-          resolve(ack.message);
+          settle(() => resolve(ack.message));
         },
       );
     });

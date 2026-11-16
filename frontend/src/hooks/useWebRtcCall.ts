@@ -69,6 +69,7 @@ export function useWebRtcCall(options: {
     }
 
     pc.ontrack = (event) => {
+      if (cancelled) return;
       const remoteStream =
         event.streams[0] ?? new MediaStream([event.track]);
       if (!remoteAudioRef.current) {
@@ -93,6 +94,7 @@ export function useWebRtcCall(options: {
     };
 
     pc.onconnectionstatechange = () => {
+      if (cancelled) return;
       if (pc.connectionState === 'connected') {
         setStatus('connected');
       } else if (
@@ -111,13 +113,16 @@ export function useWebRtcCall(options: {
           offerToReceiveAudio: true,
           offerToReceiveVideo: false,
         });
+        if (cancelled) return;
         await pc.setLocalDescription(offer);
+        if (cancelled) return;
         socket.emit('signal', {
           callId,
           type: 'offer',
           payload: pc.localDescription,
         });
       } catch (err) {
+        if (cancelled) return;
         setError(
           err instanceof Error ? err.message : 'Could not create WebRTC offer',
         );
@@ -148,6 +153,7 @@ export function useWebRtcCall(options: {
     socket.on(
       'peer-joined',
       (payload: { userId: string; fullName: string; role: string }) => {
+        if (cancelled) return;
         setPeerName(payload.fullName);
         setPeerLeft(false);
         setStatus('connecting');
@@ -156,20 +162,24 @@ export function useWebRtcCall(options: {
     );
 
     socket.on('peer-left', () => {
+      if (cancelled) return;
       setPeerName(null);
       setPeerLeft(true);
       setStatus('waiting');
     });
 
     socket.on('signal', async (message: SignalMessage) => {
+      if (cancelled) return;
       try {
         if (message.type === 'offer') {
           setPeerName(message.fromName);
           await pc.setRemoteDescription(
             message.payload as RTCSessionDescriptionInit,
           );
+          if (cancelled) return;
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
+          if (cancelled) return;
           socket.emit('signal', {
             callId,
             type: 'answer',
@@ -179,6 +189,7 @@ export function useWebRtcCall(options: {
           await pc.setRemoteDescription(
             message.payload as RTCSessionDescriptionInit,
           );
+          if (cancelled) return;
           setStatus('connected');
         } else if (message.type === 'ice') {
           try {
@@ -190,6 +201,7 @@ export function useWebRtcCall(options: {
           }
         }
       } catch (err) {
+        if (cancelled) return;
         setError(
           err instanceof Error ? err.message : 'WebRTC signaling failed',
         );
@@ -198,6 +210,7 @@ export function useWebRtcCall(options: {
     });
 
     socket.on('connect_error', () => {
+      if (cancelled) return;
       setError('Could not connect to call signaling server');
       setStatus('error');
     });

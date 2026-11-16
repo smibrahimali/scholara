@@ -6,6 +6,7 @@ import { HeraldicDivider } from '../components/ivy/HeraldicDivider';
 import { TapButton } from '../components/ivy/TapButton';
 import { MobileWrapper } from '../components/layout/MobileWrapper';
 import { useAuth } from '../context/AuthContext';
+import { homePathForRole } from '../lib/roleHome';
 import { api } from '../services/api';
 import type { DemoAccount } from '../types/auth';
 
@@ -18,23 +19,31 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (user) navigate('/app', { replace: true });
+    if (user) navigate(homePathForRole(user.role), { replace: true });
   }, [user, navigate]);
 
   useEffect(() => {
+    let cancelled = false;
     api
       .get<DemoAccount[]>('/auth/demo-accounts')
-      .then((res) => setAccounts(res.data))
+      .then((res) => {
+        if (cancelled) return;
+        setAccounts(Array.isArray(res.data) ? res.data : []);
+      })
       .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (loading) return;
     setLoading(true);
     try {
       const loggedIn = await login(email, password);
       toast.success(`Signed in as ${loggedIn.fullName}`);
-      navigate('/app');
+      navigate(homePathForRole(loggedIn.role));
     } catch {
       toast.error('Login failed. Seed the database and check the API.');
     } finally {

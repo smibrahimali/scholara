@@ -151,8 +151,11 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
   const callsQuery = useQuery({
     queryKey: ['calls', studentId ?? 'self'],
     queryFn: () => fetchCalls(studentId),
-    refetchInterval: (query) =>
-      query.state.status === 'error' ? false : 5000,
+    refetchInterval: (query) => {
+      if (query.state.status === 'error') return false;
+      const hasOpen = query.state.data?.some((call) => !call.endedAt);
+      return hasOpen ? 5000 : 30_000;
+    },
     enabled: studentScopeEnabled,
     retry: false,
   });
@@ -160,8 +163,10 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
   const openChatQuery = useQuery({
     queryKey: ['chat-session-open', studentId ?? 'self'],
     queryFn: () => fetchOpenChatSession(studentId),
-    refetchInterval: (query) =>
-      query.state.status === 'error' ? false : 5000,
+    refetchInterval: (query) => {
+      if (query.state.status === 'error') return false;
+      return query.state.data ? 5000 : 30_000;
+    },
     enabled: studentScopeEnabled,
     retry: false,
   });
@@ -332,8 +337,14 @@ export function StudentDashboardPage({ studentId }: { studentId?: string }) {
 
   const nextDeadline = deadlines[0];
   const days = nextDeadline ? daysUntil(nextDeadline.date) : null;
-  const totalDocs = Math.max(documents.length, 1);
   const verifiedDocs = data.counts?.verifiedDocuments ?? 0;
+  const totalDocs = Math.max(
+    (data.counts?.pendingDocuments ?? 0) +
+      verifiedDocs +
+      (data.counts?.rejectedDocuments ?? 0),
+    documents.length,
+    1,
+  );
   const alertDoc =
     documents.find((d) => d.status === 'NOT_UPLOADED') ??
     documents.find((d) => d.status === 'REJECTED');

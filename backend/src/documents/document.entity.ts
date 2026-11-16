@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -13,10 +14,12 @@ import { StudentProfile } from '../students/student-profile.entity';
 import { DocumentReview } from './document-review.entity';
 
 @Entity('documents')
+@Index('idx_documents_student_status', ['studentId', 'status'])
 export class Document {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
+  @Index('idx_documents_student_id')
   @Column({ name: 'student_id' })
   studentId!: string;
 

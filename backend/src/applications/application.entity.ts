@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -20,6 +21,7 @@ export class Application {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
+  @Index('idx_applications_student_id')
   @Column({ name: 'student_id' })
   studentId!: string;
 

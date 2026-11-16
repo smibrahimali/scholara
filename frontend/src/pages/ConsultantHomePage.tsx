@@ -39,15 +39,19 @@ export function ConsultantHomePage() {
   const pendingCallsQuery = useQuery({
     queryKey: ['call-requests', 'PENDING'],
     queryFn: () => fetchCallRequests({ status: 'PENDING' }),
-    refetchInterval: (query) =>
-      query.state.status === 'error' ? false : 8000,
+    refetchInterval: (query) => {
+      if (query.state.status === 'error') return false;
+      return (query.state.data?.length ?? 0) > 0 ? 8000 : 30_000;
+    },
   });
 
   const pendingChatsQuery = useQuery({
     queryKey: ['chat-requests', 'PENDING'],
     queryFn: () => fetchChatRequests({ status: 'PENDING' }),
-    refetchInterval: (query) =>
-      query.state.status === 'error' ? false : 8000,
+    refetchInterval: (query) => {
+      if (query.state.status === 'error') return false;
+      return (query.state.data?.length ?? 0) > 0 ? 8000 : 30_000;
+    },
   });
 
   const handoverMutation = useMutation({

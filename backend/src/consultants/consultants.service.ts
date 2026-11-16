@@ -218,29 +218,38 @@ export class ConsultantsService {
       order: { createdAt: 'ASC' },
     });
 
-    const enriched = await Promise.all(
-      students.map(async (student) => {
-        const [docs, apps] = await Promise.all([
-          this.documentsRepo.find({ where: { studentId: student.id } }),
-          this.applicationsRepo.find({ where: { studentId: student.id } }),
-        ]);
-        return {
-          id: student.id,
-          fullName: student.user.fullName,
-          email: student.user.email,
-          targetProgram: student.targetProgram,
-          pendingReviews: docs.filter(
-            (d) => d.status === DocumentStatus.UNDER_REVIEW,
-          ).length,
-          rejectedDocuments: docs.filter(
-            (d) => d.status === DocumentStatus.REJECTED,
-          ).length,
-          applications: apps.length,
-        };
-      }),
-    );
+    const studentIds = students.map((s) => s.id);
+    if (studentIds.length === 0) {
+      return [];
+    }
 
-    return enriched;
+    const [docs, apps] = await Promise.all([
+      this.documentsRepo.find({
+        where: { studentId: In(studentIds) },
+        select: ['id', 'studentId', 'status'],
+      }),
+      this.applicationsRepo.find({
+        where: { studentId: In(studentIds) },
+        select: ['id', 'studentId'],
+      }),
+    ]);
+
+    return students.map((student) => {
+      const studentDocs = docs.filter((d) => d.studentId === student.id);
+      return {
+        id: student.id,
+        fullName: student.user.fullName,
+        email: student.user.email,
+        targetProgram: student.targetProgram,
+        pendingReviews: studentDocs.filter(
+          (d) => d.status === DocumentStatus.UNDER_REVIEW,
+        ).length,
+        rejectedDocuments: studentDocs.filter(
+          (d) => d.status === DocumentStatus.REJECTED,
+        ).length,
+        applications: apps.filter((a) => a.studentId === student.id).length,
+      };
+    });
   }
 
   async listCallNotes(user: JwtPayload, studentId: string) {

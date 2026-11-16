@@ -2,18 +2,18 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { fetchDashboard } from '../../services/scholaraApi';
+import { fetchConsultantStudents } from '../../services/scholaraApi';
 
 export function ConsultantDossierBanner({ studentId }: { studentId: string }) {
   const { user } = useAuth();
   const { data } = useQuery({
-    queryKey: ['dashboard', studentId],
-    queryFn: () => fetchDashboard(studentId),
+    queryKey: ['consultant-students'],
+    queryFn: fetchConsultantStudents,
     enabled: Boolean(user) && user.role === 'CONSULTANT',
     staleTime: 60_000,
   });
 
-  const name = data?.student?.fullName;
+  const name = data?.find((s) => s.id === studentId)?.fullName;
 
   return (
     <div

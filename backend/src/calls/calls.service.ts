@@ -36,7 +36,8 @@ export class CallsService {
       studentId,
     );
 
-    return this.sessionsRepo.find({
+    // Omit heavy transcript blobs from list; detail endpoint still returns full rows.
+    const sessions = await this.sessionsRepo.find({
       where: { studentId: resolvedStudentId },
       relations: {
         note: true,
@@ -44,7 +45,13 @@ export class CallsService {
         student: { user: true },
       },
       order: { startedAt: 'DESC' },
+      take: 40,
     });
+
+    return sessions.map((session) => ({
+      ...session,
+      transcript: null,
+    }));
   }
 
   async getById(user: JwtPayload, id: string) {

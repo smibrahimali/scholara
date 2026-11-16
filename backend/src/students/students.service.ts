@@ -40,40 +40,53 @@ export class StudentsService {
       throw new NotFoundException('Student not found');
     }
 
-    const [documents, applications, callNotes] = await Promise.all([
-      this.documentsRepo.find({
-        where: { studentId: resolvedStudentId },
-        order: { updatedAt: 'DESC' },
-      }),
-      this.applicationsRepo.find({
-        where: { studentId: resolvedStudentId },
-        relations: { university: true, program: true, steps: true },
-        order: { updatedAt: 'DESC' },
-      }),
-      this.callNotesRepo
-        .createQueryBuilder('note')
-        .innerJoinAndSelect('note.callSession', 'session')
-        .where('session.studentId = :studentId', {
-          studentId: resolvedStudentId,
-        })
-        .orderBy('note.createdAt', 'DESC')
-        .take(5)
-        .getMany(),
-    ]);
+    const [documents, applications, callNotes, statusRows, activeApplications] =
+      await Promise.all([
+        this.documentsRepo.find({
+          where: { studentId: resolvedStudentId },
+          order: { updatedAt: 'DESC' },
+          take: 12,
+        }),
+        this.applicationsRepo.find({
+          where: { studentId: resolvedStudentId },
+          relations: { university: true, program: true, steps: true },
+          order: { updatedAt: 'DESC' },
+          take: 6,
+        }),
+        this.callNotesRepo
+          .createQueryBuilder('note')
+          .innerJoinAndSelect('note.callSession', 'session')
+          .where('session.studentId = :studentId', {
+            studentId: resolvedStudentId,
+          })
+          .orderBy('note.createdAt', 'DESC')
+          .take(5)
+          .getMany(),
+        this.documentsRepo
+          .createQueryBuilder('d')
+          .select('d.status', 'status')
+          .addSelect('COUNT(*)', 'count')
+          .where('d.student_id = :studentId', {
+            studentId: resolvedStudentId,
+          })
+          .groupBy('d.status')
+          .getRawMany<{ status: DocumentStatus; count: string }>(),
+        this.applicationsRepo.count({
+          where: { studentId: resolvedStudentId },
+        }),
+      ]);
+
+    const statusCounts = Object.fromEntries(
+      statusRows.map((row) => [row.status, Number(row.count)]),
+    ) as Partial<Record<DocumentStatus, number>>;
 
     const counts = {
-      pendingDocuments: documents.filter(
-        (d) =>
-          d.status === DocumentStatus.UNDER_REVIEW ||
-          d.status === DocumentStatus.NOT_UPLOADED,
-      ).length,
-      verifiedDocuments: documents.filter(
-        (d) => d.status === DocumentStatus.VERIFIED,
-      ).length,
-      rejectedDocuments: documents.filter(
-        (d) => d.status === DocumentStatus.REJECTED,
-      ).length,
-      activeApplications: applications.length,
+      pendingDocuments:
+        (statusCounts[DocumentStatus.UNDER_REVIEW] ?? 0) +
+        (statusCounts[DocumentStatus.NOT_UPLOADED] ?? 0),
+      verifiedDocuments: statusCounts[DocumentStatus.VERIFIED] ?? 0,
+      rejectedDocuments: statusCounts[DocumentStatus.REJECTED] ?? 0,
+      activeApplications,
     };
 
     const deadlines = applications

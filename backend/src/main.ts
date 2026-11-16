@@ -2,11 +2,19 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { DataSource } from 'typeorm';
 import { AppModule } from './app.module';
+import { ensureHotIndexes } from './database/ensure-indexes';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
+
+  try {
+    await ensureHotIndexes(app.get(DataSource));
+  } catch (err) {
+    console.warn('Index ensure skipped:', err);
+  }
 
   app.setGlobalPrefix('api');
   app.useGlobalPipes(

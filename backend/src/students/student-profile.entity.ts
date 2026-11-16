@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -26,6 +27,7 @@ export class StudentProfile {
   @JoinColumn({ name: 'user_id' })
   user!: User;
 
+  @Index('idx_student_profiles_consultant_id')
   @Column({ name: 'consultant_id', nullable: true })
   consultantId!: string | null;
 

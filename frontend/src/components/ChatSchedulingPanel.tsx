@@ -95,13 +95,22 @@ export function ChatSchedulingPanel({
     queryKey: ['chat-requests', studentId ?? 'self'],
     queryFn: () =>
       fetchChatRequests(studentId ? { studentId } : undefined),
-    refetchInterval: 5000,
+    refetchInterval: (query) => {
+      if (query.state.status === 'error') return false;
+      const active = query.state.data?.some(
+        (r) => r.status === 'PENDING' || r.status === 'APPROVED',
+      );
+      return active ? 5000 : 30_000;
+    },
   });
 
   const openSessionQuery = useQuery({
     queryKey: ['chat-session-open', studentId ?? 'self'],
     queryFn: () => fetchOpenChatSession(studentId),
-    refetchInterval: 4000,
+    refetchInterval: (query) => {
+      if (query.state.status === 'error') return false;
+      return query.state.data ? 4000 : 30_000;
+    },
   });
 
   const openSession = openSessionQuery.data ?? null;

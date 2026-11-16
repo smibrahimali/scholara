@@ -62,7 +62,10 @@ export function MessagesPage({ studentId }: { studentId?: string }) {
     queryKey: ['chat-session-open', resolvedStudentId ?? 'self'],
     queryFn: () => fetchOpenChatSession(resolvedStudentId),
     enabled: Boolean(user),
-    refetchInterval: 4000,
+    refetchInterval: (query) => {
+      if (query.state.status === 'error') return false;
+      return query.state.data ? 4000 : 30_000;
+    },
   });
 
   const openSession = openSessionQuery.data ?? null;

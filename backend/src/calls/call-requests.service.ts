@@ -74,21 +74,38 @@ export class CallRequestsService {
   }
 
   private async healCompletedRequests(rows: CallRequest[]) {
-    for (const request of rows) {
-      if (
-        request.status !== CallRequestStatus.APPROVED ||
-        !request.callSessionId
-      ) {
-        continue;
-      }
-      const session = await this.sessionsRepo.findOne({
-        where: { id: request.callSessionId },
-      });
-      if (session?.endedAt) {
-        request.status = CallRequestStatus.COMPLETED;
-        await this.requestsRepo.save(request);
-      }
+    const sessionIds = [
+      ...new Set(
+        rows
+          .filter(
+            (r) =>
+              r.status === CallRequestStatus.APPROVED && Boolean(r.callSessionId),
+          )
+          .map((r) => r.callSessionId as string),
+      ),
+    ];
+    if (sessionIds.length === 0) {
+      return;
     }
+
+    const ended = await this.sessionsRepo.find({
+      where: { id: In(sessionIds) },
+      select: ['id', 'endedAt'],
+    });
+    const endedIds = new Set(
+      ended.filter((s) => Boolean(s.endedAt)).map((s) => s.id),
+    );
+    if (endedIds.size === 0) {
+      return;
+    }
+
+    const toComplete = rows.filter(
+      (r) => r.callSessionId && endedIds.has(r.callSessionId),
+    );
+    for (const request of toComplete) {
+      request.status = CallRequestStatus.COMPLETED;
+    }
+    await this.requestsRepo.save(toComplete);
   }
 
   async list(user: JwtPayload, studentId?: string, status?: string) {

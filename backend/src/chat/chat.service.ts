@@ -14,11 +14,17 @@ import { SendChatMessageDto } from './dto/send-chat-message.dto';
 const HISTORY_LIMIT = 40;
 /** Keep model context aligned with UI history window. */
 const CONTEXT_HISTORY_LIMIT = 40;
+const STUDENT_CONTEXT_TTL_MS = 60_000;
 
 @Injectable()
 export class ChatService {
   /** Bumped on clear so in-flight sends do not persist after the thread is wiped. */
   private readonly clearGeneration = new Map<string, number>();
+  /** Short TTL cache so consecutive chat turns skip repeated dashboard-sized loads. */
+  private readonly studentContextCache = new Map<
+    string,
+    { expiresAt: number; value: string }
+  >();
 
   constructor(
     @InjectRepository(ChatMessage)
@@ -252,6 +258,11 @@ export class ChatService {
   }
 
   private async loadStudentContext(studentId: string): Promise<string> {
+    const cached = this.studentContextCache.get(studentId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value;
+    }
+
     const student = await this.studentsRepo.findOne({
       where: { id: studentId },
       relations: { user: true, consultant: { user: true } },
@@ -264,11 +275,21 @@ export class ChatService {
       this.documentsRepo.find({
         where: { studentId },
         order: { updatedAt: 'DESC' },
+        take: 20,
+        select: [
+          'id',
+          'title',
+          'documentType',
+          'status',
+          'rejectionReason',
+          'updatedAt',
+        ],
       }),
       this.applicationsRepo.find({
         where: { studentId },
         relations: { university: true, program: true, steps: true },
         order: { updatedAt: 'DESC' },
+        take: 8,
       }),
     ]);
 
@@ -295,7 +316,7 @@ export class ChatService {
       }${app.decisionNotes ? `, notes=${app.decisionNotes}` : ''}`;
     });
 
-    return [
+    const value = [
       `Student: ${student.user.fullName} (${student.user.email})`,
       `Consultant: ${student.consultant?.user.fullName ?? 'unassigned'}`,
       'Documents:',
@@ -303,6 +324,12 @@ export class ChatService {
       'Applications:',
       ...(appLines.length ? appLines : ['- none']),
     ].join('\n');
+
+    this.studentContextCache.set(studentId, {
+      expiresAt: Date.now() + STUDENT_CONTEXT_TTL_MS,
+      value,
+    });
+    return value;
   }
 }
 

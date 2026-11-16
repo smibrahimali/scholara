@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -11,10 +12,12 @@ import { StudentProfile } from '../students/student-profile.entity';
 import { ConsultantProfile } from '../consultants/consultant-profile.entity';
 
 @Entity('chat_sessions')
+@Index('idx_chat_sessions_student_ended', ['studentId', 'endedAt'])
 export class ChatSession {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
+  @Index('idx_chat_sessions_student_id')
   @Column({ name: 'student_id' })
   studentId!: string;
 

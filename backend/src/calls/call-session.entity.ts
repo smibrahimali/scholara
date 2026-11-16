@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToOne,
@@ -13,10 +14,12 @@ import { ConsultantProfile } from '../consultants/consultant-profile.entity';
 import { CallNote } from './call-note.entity';
 
 @Entity('call_sessions')
+@Index('idx_call_sessions_student_ended', ['studentId', 'endedAt'])
 export class CallSession {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
+  @Index('idx_call_sessions_student_id')
   @Column({ name: 'student_id' })
   studentId!: string;
 

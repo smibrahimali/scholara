@@ -62,6 +62,10 @@ export const entities = [
           synchronize: config.get<string>('NODE_ENV') !== 'production',
           logging: config.get<string>('NODE_ENV') === 'development',
           ssl: postgresSslOption(databaseUrl),
+          extra: {
+            max: 10,
+            idleTimeoutMillis: 30_000,
+          },
         };
       },
     }),

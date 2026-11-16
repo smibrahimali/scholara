@@ -34,6 +34,7 @@ import {
   cancelCallRequest,
   createCallRequest,
   endCall,
+  fetchCall,
   fetchCallRequests,
   fetchCalls,
   fetchDashboard,
@@ -222,6 +223,13 @@ function invalidateSessionQueries(queryClient: ReturnType<typeof useQueryClient>
 
 function HistoryCallCard({ call }: { call: CallSessionItem }) {
   const [open, setOpen] = useState(false);
+  const detailQuery = useQuery({
+    queryKey: ['call', call.id],
+    queryFn: () => fetchCall(call.id),
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const detail = detailQuery.data ?? call;
   const consultantName = call.consultant?.user?.fullName ?? 'Consultant';
 
   return (
@@ -261,27 +269,29 @@ function HistoryCallCard({ call }: { call: CallSessionItem }) {
           <div>
             <p className="label-caps mb-1">Transcript</p>
             <p className="whitespace-pre-wrap text-sm text-foreground">
-              {call.transcript?.trim() || 'No transcript saved yet.'}
+              {detailQuery.isLoading
+                ? 'Loading transcript…'
+                : detail.transcript?.trim() || 'No transcript saved yet.'}
             </p>
           </div>
-          {call.note ? (
+          {detail.note ? (
             <div className="space-y-2 rounded-xl bg-secondary/60 p-3">
               <p className="label-caps">Call note</p>
               <p className="text-sm">
                 <span className="font-semibold">Summary: </span>
-                {call.note.summary}
+                {detail.note.summary}
               </p>
               <p className="text-sm whitespace-pre-wrap">
                 <span className="font-semibold">Actions: </span>
-                {call.note.actionItems}
+                {detail.note.actionItems}
               </p>
               <p className="text-sm">
                 <span className="font-semibold">Universities: </span>
-                {call.note.universitiesDiscussed}
+                {detail.note.universitiesDiscussed}
               </p>
               <p className="text-sm">
                 <span className="font-semibold">Follow-ups: </span>
-                {call.note.followUps}
+                {detail.note.followUps}
               </p>
             </div>
           ) : (
@@ -637,14 +647,18 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
     queryKey: ['dashboard', resolvedStudentId ?? 'self'],
     queryFn: () => fetchDashboard(resolvedStudentId),
     enabled: sessionScopeEnabled,
+    staleTime: 60_000,
   });
 
   const callsQuery = useQuery({
     queryKey: ['calls', resolvedStudentId ?? 'self'],
     queryFn: () => fetchCalls(resolvedStudentId),
     enabled: sessionScopeEnabled,
-    refetchInterval: (query) =>
-      query.state.status === 'error' ? false : 4000,
+    refetchInterval: (query) => {
+      if (query.state.status === 'error') return false;
+      const hasOpen = query.state.data?.some((call) => !call.endedAt);
+      return hasOpen ? 4000 : 30_000;
+    },
   });
 
   const callRequestsQuery = useQuery({
@@ -653,8 +667,13 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
       fetchCallRequests(
         resolvedStudentId ? { studentId: resolvedStudentId } : undefined,
       ),
-    refetchInterval: (query) =>
-      query.state.status === 'error' ? false : 5000,
+    refetchInterval: (query) => {
+      if (query.state.status === 'error') return false;
+      const active = query.state.data?.some(
+        (r) => r.status === 'PENDING' || r.status === 'APPROVED',
+      );
+      return active ? 5000 : 30_000;
+    },
     enabled: sessionScopeEnabled,
   });
 
@@ -664,16 +683,23 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
       fetchChatRequests(
         resolvedStudentId ? { studentId: resolvedStudentId } : undefined,
       ),
-    refetchInterval: (query) =>
-      query.state.status === 'error' ? false : 5000,
+    refetchInterval: (query) => {
+      if (query.state.status === 'error') return false;
+      const active = query.state.data?.some(
+        (r) => r.status === 'PENDING' || r.status === 'APPROVED',
+      );
+      return active ? 5000 : 30_000;
+    },
     enabled: sessionScopeEnabled,
   });
 
   const openChatQuery = useQuery({
     queryKey: ['chat-session-open', resolvedStudentId ?? 'self'],
     queryFn: () => fetchOpenChatSession(resolvedStudentId),
-    refetchInterval: (query) =>
-      query.state.status === 'error' ? false : 4000,
+    refetchInterval: (query) => {
+      if (query.state.status === 'error') return false;
+      return query.state.data ? 4000 : 30_000;
+    },
     enabled: sessionScopeEnabled,
   });
 

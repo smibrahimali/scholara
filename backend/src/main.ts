@@ -34,8 +34,8 @@ async function bootstrap() {
     SwaggerModule.createDocument(app, swagger),
   );
 
-  const port = config.get<number>('PORT') ?? 3000;
-  await app.listen(port);
+  const port = Number(config.get<string>('PORT') ?? 3000);
+  await app.listen(port, '0.0.0.0');
   // Socket.io namespaces (same HTTP server / CORS as WEB_ORIGIN):
   // - /calls-realtime — WebRTC signaling
   // - /messaging-realtime — student↔consultant direct messages

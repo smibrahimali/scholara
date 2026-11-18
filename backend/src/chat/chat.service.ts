@@ -75,7 +75,11 @@ export class ChatService {
       content,
       dto.studentId,
     );
-    if (directApplicationAnswer) {
+    const directDocumentAnswer = directApplicationAnswer
+      ? null
+      : await this.tryAnswerDocumentDate(user, content, dto.studentId);
+    const directAnswer = directApplicationAnswer ?? directDocumentAnswer;
+    if (directAnswer) {
       const userMessage = await this.chatRepo.save(
         this.chatRepo.create({ userId: user.sub, role: 'user', content }),
       );
@@ -83,7 +87,7 @@ export class ChatService {
         this.chatRepo.create({
           userId: user.sub,
           role: 'assistant',
-          content: directApplicationAnswer,
+          content: directAnswer,
         }),
       );
       return { userMessage, assistantMessage };
@@ -189,6 +193,52 @@ export class ChatService {
       return `I found your ${selected.university.name} application, but its submission date is not recorded.`;
     }
     return `You submitted your ${selected.university.name} application for ${selected.program.name} on ${date}.`;
+  }
+
+  private async tryAnswerDocumentDate(
+    user: JwtPayload,
+    content: string,
+    requestedStudentId?: string,
+  ): Promise<string | null> {
+    if (!/\b(when|what date|date)\b/i.test(content)) return null;
+    const action = /\b(upload|uploaded|submit|submitted)\b/i.test(content)
+      ? 'uploaded'
+      : /\b(reject|rejected)\b/i.test(content)
+        ? 'rejected'
+        : /\b(verif|verified|approved|approve)\b/i.test(content)
+          ? 'verified'
+          : null;
+    if (!action) return null;
+
+    const studentId = await this.access.resolveReadableStudentId(
+      user,
+      requestedStudentId,
+    );
+    const documents = await this.documentsRepo.find({
+      where: { studentId },
+      order: { updatedAt: 'DESC' },
+      take: 50,
+    });
+    const normalized = content.toLowerCase();
+    const document = documents.find((item) => {
+      const words = `${item.title} ${item.documentType}`
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((word) => word.length > 3);
+      return words.some((word) => normalized.includes(word));
+    });
+    if (!document) return null;
+
+    const date =
+      action === 'uploaded'
+        ? document.uploadedAt
+        : action === 'rejected'
+          ? document.rejectedAt
+          : document.verifiedAt;
+    if (!date) {
+      return `I found your ${document.title}, but its ${action} date is not recorded.`;
+    }
+    return `Your ${document.title} was ${action} on ${formatDate(date)}.`;
   }
 
 
@@ -389,6 +439,26 @@ export class ChatService {
         }`,
     );
 
+    const documentDateLines = documents.map((document) => {
+      const dates = [
+        document.uploadedAt
+          ? `uploaded ${formatDate(document.uploadedAt)}`
+          : null,
+        document.lastReviewedAt
+          ? `last reviewed ${formatDate(document.lastReviewedAt)}`
+          : null,
+        document.verifiedAt
+          ? `verified ${formatDate(document.verifiedAt)}`
+          : null,
+        document.rejectedAt
+          ? `rejected ${formatDate(document.rejectedAt)}`
+          : null,
+      ].filter(Boolean);
+      return dates.length
+        ? `- ${document.title}: ${dates.join(', ')}`
+        : `- ${document.title}: no lifecycle date recorded`;
+    });
+
     const appLines = applications.map((app) => {
       const orderedSteps = [...(app.steps ?? [])].sort(
         (a, b) => a.stepNumber - b.stepNumber,
@@ -444,6 +514,8 @@ export class ChatService {
       `Consultant: ${student.consultant?.user.fullName ?? 'unassigned'}`,
       'Documents:',
       ...(docLines.length ? docLines : ['- none']),
+      'Document lifecycle dates:',
+      ...(documentDateLines.length ? documentDateLines : ['- none']),
       'Applications:',
       ...(appLines.length ? appLines : ['- none']),
     ].join('\n');

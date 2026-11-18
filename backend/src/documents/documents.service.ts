@@ -113,6 +113,10 @@ export class DocumentsService {
     document.storagePath = path;
     document.status = DocumentStatus.UNDER_REVIEW;
     document.rejectionReason = null;
+    document.uploadedAt = new Date();
+    document.lastReviewedAt = null;
+    document.verifiedAt = null;
+    document.rejectedAt = null;
     await this.documentsRepo.save(document);
 
     if (previousPath && previousPath !== path) {
@@ -222,6 +226,11 @@ export class DocumentsService {
         : DocumentStatus.REJECTED;
     document.rejectionReason =
       dto.decision === DocumentReviewDecision.REJECTED ? dto.reason! : null;
+    document.lastReviewedAt = new Date();
+    document.verifiedAt =
+      dto.decision === DocumentReviewDecision.APPROVED ? new Date() : null;
+    document.rejectedAt =
+      dto.decision === DocumentReviewDecision.REJECTED ? new Date() : null;
 
     await this.documentsRepo.save(document);
     await this.reviewsRepo.save(

@@ -212,17 +212,26 @@ function JourneyTimeline({
                       'mb-2 rounded-xl border border-[#DEC484] bg-[#FBF5E6] p-3',
                   )}
                 >
-                  <button
-                    type="button"
-                    onClick={() => setOpen(isOpen ? null : i)}
-                    className="flex min-h-14 w-full items-center justify-between py-2.5 text-left"
-                  >
+                  {state === 'future' ? (
+                    <div className="flex min-h-14 w-full items-center py-2.5 text-left">
+                      <span>
+                        <span className="block font-semibold text-muted-foreground">
+                          {s.label}
+                        </span>
+                        <span className="text-sm text-muted-foreground">
+                          {stepCaption(s.status, s.completedAt)}
+                        </span>
+                      </span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setOpen(isOpen ? null : i)}
+                      className="flex min-h-14 w-full items-center justify-between py-2.5 text-left"
+                    >
                     <span>
                       <span
-                        className={cn(
-                          'block font-semibold',
-                          state === 'future' && 'text-muted-foreground',
-                        )}
+                        className="block font-semibold"
                       >
                         {s.label}
                       </span>
@@ -240,7 +249,8 @@ function JourneyTimeline({
                     <motion.span animate={{ rotate: isOpen ? 180 : 0 }}>
                       <ChevronDown className="h-4 w-4 text-muted-foreground" />
                     </motion.span>
-                  </button>
+                    </button>
+                  )}
                   <AnimatePresence initial={false}>
                     {isOpen ? (
                       <motion.div

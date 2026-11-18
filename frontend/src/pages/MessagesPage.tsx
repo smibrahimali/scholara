@@ -339,7 +339,15 @@ export function MessagesPage({ studentId }: { studentId?: string }) {
             <MessageSquareOff className="h-4 w-4" />
             {endMutation.isPending ? 'Ending…' : 'End chat & clear messages'}
           </TapButton>
-        ) : null}
+        ) : (
+          <TapButton
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card py-3 text-sm font-semibold text-foreground"
+            onClick={() => navigate(schedulePath)}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Leave chat
+          </TapButton>
+        )}
 
         <div className="ivy-card flex min-h-[52dvh] flex-1 flex-col overflow-hidden">
           <div className="no-scrollbar flex-1 space-y-3 overflow-y-auto px-4 py-4">

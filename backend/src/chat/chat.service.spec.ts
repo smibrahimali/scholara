@@ -11,7 +11,7 @@ describe('ChatService Groq ordering (P1-3)', () => {
   };
   const studentsRepo = {};
   const documentsRepo = {};
-  const applicationsRepo = {};
+  const applicationsRepo = { find: jest.fn() };
   const groq = {
     chatCompletion: jest.fn(),
   };
@@ -24,11 +24,13 @@ describe('ChatService Groq ordering (P1-3)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     chatRepo.find.mockResolvedValue([]);
+    applicationsRepo.find.mockResolvedValue([]);
     service = new ChatService(
       chatRepo as never,
       studentsRepo as never,
       documentsRepo as never,
       applicationsRepo as never,
+      {} as never,
       groq as never,
       access as never,
     );
@@ -76,5 +78,50 @@ describe('ChatService Groq ordering (P1-3)', () => {
     expect(groq.chatCompletion).toHaveBeenCalled();
     expect(chatRepo.save).toHaveBeenCalledTimes(2);
     expect(result.assistantMessage.content).toBe('hi there');
+  });
+
+  it('answers university-specific submission dates without Groq', async () => {
+    applicationsRepo.find.mockResolvedValue([
+      {
+        createdAt: new Date('2026-09-01T00:00:00.000Z'),
+        submittedAt: new Date('2026-09-28T00:00:00.000Z'),
+        university: { name: 'Khalifa University' },
+        program: { name: 'BS Computer Science' },
+      },
+      {
+        createdAt: new Date('2026-10-01T00:00:00.000Z'),
+        submittedAt: new Date('2026-10-14T00:00:00.000Z'),
+        university: { name: 'Qatar University' },
+        program: { name: 'BS Computer Science' },
+      },
+    ]);
+    chatRepo.save
+      .mockResolvedValueOnce({ role: 'user' })
+      .mockResolvedValueOnce({
+        role: 'assistant',
+        content:
+          'You submitted your Khalifa University application for BS Computer Science on 2026-09-28.',
+      });
+
+    const result = await service.sendMessage(student, {
+      content: 'When did I apply to Khalifa University?',
+    });
+
+    expect(result.assistantMessage.content).toContain('Khalifa University');
+    expect(result.assistantMessage.content).toContain('2026-09-28');
+    expect(groq.chatCompletion).not.toHaveBeenCalled();
+  });
+
+  it('does not treat an acceptance question as a submission-date lookup', async () => {
+    groq.chatCompletion.mockResolvedValue('The decision date is not recorded.');
+    chatRepo.save
+      .mockResolvedValueOnce({ role: 'user' })
+      .mockResolvedValueOnce({ role: 'assistant', content: 'The decision date is not recorded.' });
+
+    await service.sendMessage(student, {
+      content: 'When was my Khalifa University application accepted?',
+    });
+
+    expect(groq.chatCompletion).toHaveBeenCalled();
   });
 });

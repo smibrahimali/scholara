@@ -49,6 +49,18 @@ export class Document {
   @Column({ name: 'rejection_reason', type: 'text', nullable: true })
   rejectionReason!: string | null;
 
+  @Column({ name: 'uploaded_at', type: 'timestamptz', nullable: true })
+  uploadedAt!: Date | null;
+
+  @Column({ name: 'last_reviewed_at', type: 'timestamptz', nullable: true })
+  lastReviewedAt!: Date | null;
+
+  @Column({ name: 'verified_at', type: 'timestamptz', nullable: true })
+  verifiedAt!: Date | null;
+
+  @Column({ name: 'rejected_at', type: 'timestamptz', nullable: true })
+  rejectedAt!: Date | null;
+
   @OneToMany(() => DocumentReview, (review) => review.document)
   reviews?: DocumentReview[];
 

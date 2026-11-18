@@ -4,6 +4,7 @@ import { GroqModule } from '../groq/groq.module';
 import { StudentProfile } from '../students/student-profile.entity';
 import { Document } from '../documents/document.entity';
 import { Application } from '../applications/application.entity';
+import { ApplicationStatusHistory } from '../applications/application-status-history.entity';
 import { ChatMessage } from './chat-message.entity';
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
@@ -16,6 +17,7 @@ import { ChatService } from './chat.service';
       StudentProfile,
       Document,
       Application,
+      ApplicationStatusHistory,
     ]),
   ],
   controllers: [ChatController],

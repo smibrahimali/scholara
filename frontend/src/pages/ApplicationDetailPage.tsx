@@ -175,13 +175,14 @@ export function ApplicationDetailPage() {
         }))}
         renderStepAction={
           canEditNotes
-            ? (step: AdmissionTimelineStep) => (
-                <DetailStepNotes
-                  applicationId={id}
-                  stepNumber={step.stepNumber}
-                  notes={notesByStep.get(step.stepNumber) ?? null}
-                />
-              )
+            ? (step: AdmissionTimelineStep) =>
+                step.status === 'Upcoming' || step.status === 'Skipped' ? null : (
+                  <DetailStepNotes
+                    applicationId={id}
+                    stepNumber={step.stepNumber}
+                    notes={notesByStep.get(step.stepNumber) ?? null}
+                  />
+                )
             : undefined
         }
       />

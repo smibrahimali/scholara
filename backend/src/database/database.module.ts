@@ -9,6 +9,7 @@ import { University } from '../universities/university.entity';
 import { Program } from '../programs/program.entity';
 import { Application } from '../applications/application.entity';
 import { ApplicationStep } from '../applications/application-step.entity';
+import { ApplicationStatusHistory } from '../applications/application-status-history.entity';
 import { Document } from '../documents/document.entity';
 import { DocumentReview } from '../documents/document-review.entity';
 import { UniversityEmail } from '../emails/university-email.entity';
@@ -31,6 +32,7 @@ export const entities = [
   Program,
   Application,
   ApplicationStep,
+  ApplicationStatusHistory,
   Document,
   DocumentReview,
   UniversityEmail,

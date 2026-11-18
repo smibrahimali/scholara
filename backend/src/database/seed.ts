@@ -36,6 +36,21 @@ import { ChatSession } from '../messaging/chat-session.entity';
 import { ChatRequest } from '../messaging/chat-request.entity';
 import { ChatMessage } from '../chat/chat-message.entity';
 
+const DEFAULT_STEP_NOTES: Record<number, string> = {
+  1: 'Programme and intake requirements reviewed with the student before registration.',
+  2: 'Student profile and contact details have been checked against the submitted identity information.',
+  3: 'Preferred programme selected after comparing entry requirements, tuition, and deadlines.',
+  4: 'Application form submitted and acknowledgement received from the university admissions office.',
+  5: 'Application fee status recorded; retain the receipt for the admissions finance review.',
+  6: 'Admissions team is checking academic records, identity documents, and eligibility requirements.',
+  7: 'Entry test or interview preparation and completion status will be recorded when scheduled.',
+  8: 'Merit calculation will combine the academic profile, entry result, and programme capacity.',
+  9: 'Admissions decision will be recorded after the merit and document reviews are complete.',
+  10: 'Offer letter or fee challan will be issued once the admission decision is confirmed.',
+  11: 'Fee payment confirmation must be matched to the student account before enrollment can proceed.',
+  12: 'Enrollment is completed after the university confirms payment and registration documents.',
+};
+
 loadEnv({ path: resolve(__dirname, '../../../.env') });
 loadEnv({ path: resolve(__dirname, '../../.env') });
 
@@ -44,6 +59,8 @@ async function createSteps(
   applicationId: string,
   completedThrough: number,
   skipped: number[] = [],
+  notes: Record<number, string> = {},
+  timelineStart = new Date('2026-09-28T09:00:00.000Z'),
 ) {
   const stepRepo = dataSource.getRepository(ApplicationStep);
   for (let n = 1; n <= 12; n += 1) {
@@ -53,7 +70,8 @@ async function createSteps(
       status = ApplicationStepStatus.SKIPPED;
     } else if (n < completedThrough) {
       status = ApplicationStepStatus.COMPLETED;
-      completedAt = new Date();
+      completedAt = new Date(timelineStart);
+      completedAt.setUTCDate(completedAt.getUTCDate() + (n - 1) * 3);
     } else if (n === completedThrough) {
       status = ApplicationStepStatus.IN_PROGRESS;
     }
@@ -64,6 +82,10 @@ async function createSteps(
         stepNumber: n,
         label: APPLICATION_STEP_LABELS[n],
         status,
+        notes:
+          status === ApplicationStepStatus.NOT_STARTED
+            ? null
+            : (notes[n] ?? DEFAULT_STEP_NOTES[n] ?? null),
         completedAt,
       }),
     );
@@ -301,7 +323,13 @@ async function seed() {
       universityId: pstu.id,
       programId: pstuCs.id,
       status: ApplicationStatus.PENDING,
-      decisionNotes: 'Application under review by admissions office.',
+      intakeYear: 2027,
+      intakeTerm: 'Fall',
+      submittedAt: new Date('2026-10-14T09:20:00.000Z'),
+      createdAt: new Date('2026-10-14T09:20:00.000Z'),
+      updatedAt: new Date('2026-11-17T10:30:00.000Z'),
+      decisionNotes:
+        'Initial verification is underway. Admissions is waiting for a clearer transcript scan before confirming the entry-test timeline.',
     }),
   );
   const ivuApp = await applicationRepo.save(
@@ -310,10 +338,16 @@ async function seed() {
       universityId: ivu.id,
       programId: ivuSe.id,
       status: ApplicationStatus.WAITLISTED,
+      intakeYear: 2027,
+      intakeTerm: 'Fall',
+      submittedAt: new Date('2026-10-09T11:15:00.000Z'),
+      decisionAt: new Date('2026-11-12T14:00:00.000Z'),
       entryScore: '71',
       meritListDate: '2026-11-12',
+      createdAt: new Date('2026-10-09T11:15:00.000Z'),
+      updatedAt: new Date('2026-11-12T14:00:00.000Z'),
       decisionNotes:
-        'Entry test score 71/100. Merit list expected 12 November.',
+        'Student scored 71/100 in the entry assessment. The application remains waitlisted pending the final merit-list review.',
     }),
   );
   const kitApp = await applicationRepo.save(
@@ -322,18 +356,35 @@ async function seed() {
       universityId: kit.id,
       programId: kitCs.id,
       status: ApplicationStatus.ACCEPTED,
+      intakeYear: 2027,
+      intakeTerm: 'Spring',
+      submittedAt: new Date('2026-09-28T08:45:00.000Z'),
+      decisionAt: new Date('2026-11-05T12:00:00.000Z'),
+      feePaidAt: null,
+      enrollmentConfirmedAt: null,
       feeAmount: '45000',
       feeCurrency: 'AED',
       feeDueDate: '2026-11-15',
-      decisionNotes: 'Offer accepted pending fee confirmation.',
+      createdAt: new Date('2026-09-28T08:45:00.000Z'),
+      updatedAt: new Date('2026-11-15T16:20:00.000Z'),
+      decisionNotes:
+        'Offer accepted. Enrollment confirmation is blocked until the AED 45,000 fee payment is verified by the finance office.',
     }),
   );
 
   // completedThrough = first IN_PROGRESS step; all earlier steps COMPLETED
   // (strictly sequential — never COMPLETED after an unfinished/skipped gap).
-  await createSteps(dataSource, pstuApp.id, 6);
-  await createSteps(dataSource, ivuApp.id, 8);
-  await createSteps(dataSource, kitApp.id, 9);
+  await createSteps(dataSource, pstuApp.id, 6, [], {
+    5: 'Application fee receipt is uploaded. Initial verification is waiting for the corrected official transcript.',
+    6: 'Consultant is reviewing the replacement transcript before confirming entry-test eligibility.',
+  }, new Date('2026-10-14T09:20:00.000Z'));
+  await createSteps(dataSource, ivuApp.id, 8, [], {
+    7: 'Entry test completed with a score of 71/100.',
+    8: 'Merit calculation is complete; final placement depends on the next waitlist release.',
+  }, new Date('2026-10-09T11:15:00.000Z'));
+  await createSteps(dataSource, kitApp.id, 9, [], {
+    9: 'Admission offer received and accepted. Student is comparing the payment deadline with the remaining university options.',
+  }, new Date('2026-09-28T08:45:00.000Z'));
 
   const documentRepo = dataSource.getRepository(Document);
   const reviewRepo = dataSource.getRepository(DocumentReview);
@@ -344,7 +395,11 @@ async function seed() {
       title: 'Official Transcript',
       documentType: 'TRANSCRIPT',
       status: DocumentStatus.REJECTED,
-      rejectionReason: 'Blurred scan, last page missing.',
+      rejectionReason:
+        'The uploaded transcript is blurred on pages 2 and 3 and the university seal is not legible. Please scan the original colour document in full and re-upload all pages as one PDF.',
+      uploadedAt: new Date('2026-11-06T10:15:00.000Z'),
+      lastReviewedAt: new Date('2026-11-07T09:30:00.000Z'),
+      rejectedAt: new Date('2026-11-07T09:30:00.000Z'),
       storagePath: null,
     }),
   );
@@ -353,7 +408,8 @@ async function seed() {
       documentId: transcript.id,
       reviewerId: consultant1User.id,
       decision: DocumentReviewDecision.REJECTED,
-      reason: 'Blurred scan, last page missing.',
+      reason:
+        'Rejected because the university seal and course grades cannot be verified from the scan. A complete, high-resolution colour scan is required.',
     }),
   );
 
@@ -363,6 +419,9 @@ async function seed() {
       title: 'CNIC / B-Form',
       documentType: 'IDENTITY',
       status: DocumentStatus.VERIFIED,
+      uploadedAt: new Date('2026-10-01T08:00:00.000Z'),
+      lastReviewedAt: new Date('2026-10-02T13:00:00.000Z'),
+      verifiedAt: new Date('2026-10-02T13:00:00.000Z'),
     }),
   );
   await reviewRepo.save(
@@ -380,6 +439,8 @@ async function seed() {
       title: 'Recommendation Letter',
       documentType: 'RECOMMENDATION',
       status: DocumentStatus.UNDER_REVIEW,
+      uploadedAt: new Date('2026-11-16T12:10:00.000Z'),
+      lastReviewedAt: new Date('2026-11-17T09:00:00.000Z'),
     }),
   );
 
@@ -437,12 +498,13 @@ async function seed() {
     noteRepo.create({
       callSessionId: call.id,
       summary:
-        'Reviewed application progress. Khalifa University offer fee pending; American University of Sharjah waitlisted pending merit list; transcript rejected and needs re-upload.',
+        'Reviewed the rejected transcript, Khalifa University fee deadline, and American University of Sharjah waitlist position. Student understands that the transcript must be corrected before final verification.',
       actionItems:
-        '1) Student re-uploads transcript\n2) Confirm Khalifa University fee payment plan\n3) Monitor American University of Sharjah merit list on 12 November',
+        '1) Re-upload a complete colour transcript scan.\n2) Confirm whether the AED 45,000 Khalifa University fee can be paid before 15 November.\n3) Monitor the American University of Sharjah merit-list update and notify the consultant immediately.',
       universitiesDiscussed:
         'Khalifa University, American University of Sharjah, Qatar University',
-      followUps: 'Follow up on transcript re-upload before 10 November 2026.',
+      followUps:
+        'Consultant to review the replacement transcript within one business day and schedule a short follow-up before the Khalifa University payment deadline.',
     }),
   );
 
@@ -465,15 +527,55 @@ async function seed() {
 
   const conversationRepo = dataSource.getRepository(Conversation);
   const dmRepo = dataSource.getRepository(DirectMessage);
+  const chatRequestRepo = dataSource.getRepository(ChatRequest);
+  const chatSessionRepo = dataSource.getRepository(ChatSession);
   const conversation = await conversationRepo.save(
     conversationRepo.create({
       studentId: student.id,
       consultantId: consultant1.id,
     }),
   );
+  const activeChatRequest = await chatRequestRepo.save(
+    chatRequestRepo.create({
+      studentId: student.id,
+      consultantId: consultant1.id,
+      scheduledFor: new Date('2026-11-17T15:30:00.000Z'),
+      status: CallRequestStatus.APPROVED,
+      studentNote:
+        'I would like to discuss the rejected transcript, the KIT fee deadline, and whether I should keep my AUS waitlist application active.',
+      consultantNote:
+        'Reviewed the transcript rejection and advised the student to upload a colour scan. Consultant will confirm the KIT payment plan after the corrected document is received.',
+      chatSessionId: null,
+    }),
+  );
+  const activeChatSession = await chatSessionRepo.save(
+    chatSessionRepo.create({
+      studentId: student.id,
+      consultantId: consultant1.id,
+      conversationId: conversation.id,
+      startedAt: new Date('2026-11-17T15:30:00.000Z'),
+      endedAt: null,
+    }),
+  );
+  activeChatRequest.chatSessionId = activeChatSession.id;
+  await chatRequestRepo.save(activeChatRequest);
+  await chatRequestRepo.save(
+    chatRequestRepo.create({
+      studentId: student.id,
+      consultantId: consultant1.id,
+      scheduledFor: new Date('2026-11-10T11:00:00.000Z'),
+      status: CallRequestStatus.CANCELLED,
+      studentNote:
+        'Requested cancellation because the scheduled time conflicted with a university examination.',
+      consultantNote:
+        'Cancellation acknowledged. Student may submit a new request after confirming availability.',
+      chatSessionId: null,
+    }),
+  );
   await dmRepo.save(
     dmRepo.create({
       conversationId: conversation.id,
+      chatSessionId: activeChatSession.id,
       senderUserId: consultant1User.id,
       body: 'Hi Ali — please re-upload your transcript before the Khalifa University fee deadline. Happy to hop on a quick call if helpful.',
       readAt: null,
@@ -482,6 +584,7 @@ async function seed() {
   await dmRepo.save(
     dmRepo.create({
       conversationId: conversation.id,
+      chatSessionId: activeChatSession.id,
       senderUserId: studentUser.id,
       body: 'Thanks Sara. I will upload a clearer scan today and confirm once it is under review.',
       readAt: null,

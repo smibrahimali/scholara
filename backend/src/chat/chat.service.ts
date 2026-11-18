@@ -8,13 +8,14 @@ import { GroqService, GroqChatMessage } from '../groq/groq.service';
 import { StudentProfile } from '../students/student-profile.entity';
 import { Document } from '../documents/document.entity';
 import { Application } from '../applications/application.entity';
+import { ApplicationStatusHistory } from '../applications/application-status-history.entity';
 import { ChatMessage } from './chat-message.entity';
 import { SendChatMessageDto } from './dto/send-chat-message.dto';
 
-const HISTORY_LIMIT = 40;
+const HISTORY_LIMIT = 60;
 /** Keep model context aligned with UI history window. */
-const CONTEXT_HISTORY_LIMIT = 40;
-const STUDENT_CONTEXT_TTL_MS = 60_000;
+const CONTEXT_HISTORY_LIMIT = 60;
+const STUDENT_CONTEXT_TTL_MS = 10_000;
 
 @Injectable()
 export class ChatService {
@@ -35,6 +36,8 @@ export class ChatService {
     private readonly documentsRepo: Repository<Document>,
     @InjectRepository(Application)
     private readonly applicationsRepo: Repository<Application>,
+    @InjectRepository(ApplicationStatusHistory)
+    private readonly statusHistoryRepo: Repository<ApplicationStatusHistory>,
     private readonly groq: GroqService,
     private readonly access: AccessService,
   ) {}
@@ -66,6 +69,25 @@ export class ChatService {
     }
 
     const generationAtStart = this.clearGeneration.get(user.sub) ?? 0;
+
+    const directApplicationAnswer = await this.tryAnswerApplicationDate(
+      user,
+      content,
+      dto.studentId,
+    );
+    if (directApplicationAnswer) {
+      const userMessage = await this.chatRepo.save(
+        this.chatRepo.create({ userId: user.sub, role: 'user', content }),
+      );
+      const assistantMessage = await this.chatRepo.save(
+        this.chatRepo.create({
+          userId: user.sub,
+          role: 'assistant',
+          content: directApplicationAnswer,
+        }),
+      );
+      return { userMessage, assistantMessage };
+    }
 
     const history = await this.chatRepo.find({
       where: { userId: user.sub },
@@ -114,6 +136,62 @@ export class ChatService {
     return { userMessage, assistantMessage };
   }
 
+  private async tryAnswerApplicationDate(
+    user: JwtPayload,
+    content: string,
+    requestedStudentId?: string,
+  ): Promise<string | null> {
+    const asksForApplicationDate =
+      /\b(when|what date|which date|how long ago)\b/i.test(content) &&
+      /\b(appl(y|ied|ication)|submit(ted)?|first|earliest|latest)\b/i.test(
+        content,
+      ) &&
+      !/\b(accepted|waitlist|waitlisted|decision|fee|enroll|status)\b/i.test(
+        content,
+      );
+    if (!asksForApplicationDate) return null;
+
+    const studentId = await this.access.resolveReadableStudentId(
+      user,
+      requestedStudentId,
+    );
+    const applications = await this.applicationsRepo.find({
+      where: { studentId },
+      relations: { university: true, program: true },
+      order: { createdAt: 'ASC' },
+      take: 50,
+    });
+    if (applications.length === 0) {
+      return 'I could not find any applications in your Scholara record.';
+    }
+
+    const normalized = content.toLowerCase();
+    const matching = applications.filter((application) => {
+      const university = application.university.name.toLowerCase();
+      const significantWords = university
+        .split(/[^a-z0-9]+/)
+        .filter(
+          (word) =>
+            word.length > 3 &&
+            !['university', 'institute', 'college', 'school'].includes(word),
+        );
+      return significantWords.length > 0
+        ? significantWords.some((word) => normalized.includes(word))
+        : normalized.includes(university);
+    });
+    const candidates = matching.length > 0 ? matching : applications;
+    const wantsEarliest = /\b(first|earliest|oldest)\b/i.test(content);
+    const selected = wantsEarliest
+      ? candidates[0]
+      : candidates[candidates.length - 1];
+    const date = formatDate(selected.submittedAt ?? selected.createdAt);
+    if (date === 'unknown') {
+      return `I found your ${selected.university.name} application, but its submission date is not recorded.`;
+    }
+    return `You submitted your ${selected.university.name} application for ${selected.program.name} on ${date}.`;
+  }
+
+
   private async buildSystemPrompt(
     user: JwtPayload,
     requestedStudentId?: string,
@@ -121,6 +199,8 @@ export class ChatService {
     const lines = [
       'You are Scholara Assistant — a warm, encouraging, proactive university admissions coach inside the Scholara demo app. Speak like a supportive human mentor, never like a dry database terminal.',
       'Use only the factual context below. If something is missing, say you do not have that data. Do not invent universities, deadlines, document statuses, or decisions.',
+      'For application-history questions, use the explicit submitted date and compare dates chronologically. “Applied” and “submitted” mean the application submitted date, not the fee deadline, merit-list date, or last-updated date. If the date is present, answer it directly before adding any status context. If it is absent, say that the submission date is not recorded.',
+      'For document-history questions, use the explicit last-recorded-activity date only. Do not call it an upload date unless the context explicitly says it was uploaded. For status dates, state the last updated date rather than inventing a decision date.',
       'Intent routing (decide FIRST every turn — before formatting):',
       '- Greeting / small talk (hello, hi, hey, good morning, how are you, thanks, bye): reply in 1–2 short warm sentences. Greet by first name if known. Do NOT dump dossier sections, status lists, or ### headers. Optionally append [[SUGGESTIONS:Check missing documents|Review applications]] or [[CHAT_HOME]]. Never invent off-topic facts.',
       '- Off-topic / irrelevant (weather, sports, politics, recipes, general trivia, coding homework, jokes unrelated to admissions, random life questions): never answer the off-topic ask with real content. Never use student context to pad the reply. Acknowledge briefly in one witty line, then redirect to admissions help. Max 2 sentences. Optionally [[SUGGESTIONS:...]] with 1–2 admissions chips (e.g. "Check missing documents", "Schedule 1:1 Call") or [[CHAT_HOME]]. Never emit ### Documents/Applications/Deadlines blocks. Never say a cold "I can\'t help with that." Example: "I\'m tuned for your university admissions—no weather radar here! Want to check a missing document or your application steps instead?"',
@@ -282,14 +362,23 @@ export class ChatService {
           'documentType',
           'status',
           'rejectionReason',
+          'uploadedAt',
+          'lastReviewedAt',
+          'verifiedAt',
+          'rejectedAt',
           'updatedAt',
         ],
       }),
       this.applicationsRepo.find({
         where: { studentId },
-        relations: { university: true, program: true, steps: true },
-        order: { updatedAt: 'DESC' },
-        take: 8,
+        relations: {
+          university: true,
+          program: true,
+          steps: true,
+          statusHistory: true,
+        },
+        order: { createdAt: 'ASC' },
+        take: 50,
       }),
     ]);
 
@@ -301,19 +390,53 @@ export class ChatService {
     );
 
     const appLines = applications.map((app) => {
+      const orderedSteps = [...(app.steps ?? [])].sort(
+        (a, b) => a.stepNumber - b.stepNumber,
+      );
       const completed =
         app.steps?.filter((s) => s.status === ApplicationStepStatus.COMPLETED)
           .length ?? 0;
       const total = app.steps?.length ?? 0;
+      const currentStep = orderedSteps.find(
+        (step) => step.status === ApplicationStepStatus.IN_PROGRESS,
+      );
+      const stepNotes = orderedSteps
+        .filter(
+          (step) =>
+            step.status !== ApplicationStepStatus.NOT_STARTED &&
+            Boolean(step.notes),
+        )
+        .map(
+          (step) =>
+            `${step.stepNumber}:${step.label}=${step.notes}${
+              step.completedAt
+                ? ` (completed ${formatDate(step.completedAt)})`
+                : ''
+            }`,
+        )
+        .join(' | ');
+      const statusHistory = [...(app.statusHistory ?? [])]
+        .sort((a, b) => a.changedAt.getTime() - b.changedAt.getTime())
+        .map(
+          (entry) =>
+            `${humanizeEnum(entry.toStatus)} on ${formatDate(entry.changedAt)}${entry.reason ? ` (${entry.reason})` : ''}`,
+        )
+        .join(' | ');
       const deadlines = [
         app.feeDueDate ? `fee due ${app.feeDueDate}` : null,
         app.meritListDate ? `merit list ${app.meritListDate}` : null,
       ]
         .filter(Boolean)
         .join(', ');
-      return `- ${app.university.name} / ${app.program.name}: ${humanizeEnum(app.status)}, steps ${completed}/${total}${
+      return `- ${app.university.name} / ${app.program.name} (${app.intakeTerm ?? 'intake'} ${app.intakeYear ?? 'year'}): submitted ${formatDate(app.submittedAt ?? app.createdAt)}, last updated ${formatDate(app.updatedAt)}, ${humanizeEnum(app.status)}, steps ${completed}/${total}${
         deadlines ? `, ${deadlines}` : ''
-      }${app.decisionNotes ? `, notes=${app.decisionNotes}` : ''}`;
+      }${app.waitlistPosition ? `, waitlist position ${app.waitlistPosition}` : ''}${app.decisionAt ? `, decision recorded ${formatDate(app.decisionAt)}` : ''}${
+        app.feePaidAt ? `, fee paid ${formatDate(app.feePaidAt)}` : ''
+      }${app.enrollmentConfirmedAt ? `, enrollment confirmed ${formatDate(app.enrollmentConfirmedAt)}` : ''}${
+        currentStep ? `, current step ${currentStep.stepNumber}/12 (${currentStep.label})` : ''
+      }${statusHistory ? `, status history=${statusHistory}` : ''}${
+        app.decisionNotes ? `, notes=${app.decisionNotes}` : ''
+      }${stepNotes ? `, step history=${stepNotes}` : ''}`;
     });
 
     const value = [
@@ -334,6 +457,11 @@ export class ChatService {
 }
 
 /** Present DB enums as Title Case for the model (never echo SNAKE_CASE to users). */
+function formatDate(value: Date | null | undefined): string {
+  if (!value) return 'unknown';
+  return value.toISOString().slice(0, 10);
+}
+
 function humanizeEnum(value: string): string {
   return value
     .split('_')

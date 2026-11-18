@@ -56,7 +56,7 @@ export function BottomTabBar() {
 
   return (
     <nav
-      className="absolute inset-x-0 bottom-0 z-50 border-t border-[#EBE8E0]/80 bg-[#F9F8F6]/92 px-2 pt-2 shadow-nav backdrop-blur-md"
+      className="fixed bottom-0 left-1/2 z-50 w-full max-w-phone -translate-x-1/2 border-t border-[#EBE8E0]/80 bg-[#F9F8F6]/92 px-2 pt-2 shadow-nav backdrop-blur-md"
       style={{
         paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 0px))',
       }}

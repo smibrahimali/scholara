@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { BackLink } from '../ivy/BackLink';
 import { fetchConsultantStudents } from '../../services/scholaraApi';
 
 export function ConsultantDossierBanner({ studentId }: { studentId: string }) {
@@ -26,19 +25,17 @@ export function ConsultantDossierBanner({ studentId }: { studentId: string }) {
       }}
     >
       <div className="flex min-w-0 items-center gap-3">
-        <Link
+        <BackLink
           to="/app"
-          className="ivy-medallion inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full no-underline"
-          aria-label="Back to assigned students"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
+          label="Back"
+          className="mb-0 shrink-0"
+        />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[9px] font-bold uppercase tracking-[0.2em] text-gold-ink">
-            Consultant · Viewing dossier
+          <p className="label-caps truncate">
+            Consultant · Student file
           </p>
-          <p className="truncate font-serif text-sm font-semibold text-foreground">
-            {name ?? 'Student file'}
+          <p className="editorial-title mt-0.5 truncate text-sm text-foreground">
+            {name ?? 'Student'}
           </p>
         </div>
       </div>

@@ -6,13 +6,18 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ApplicationStepStatus, UserRole } from '../common/enums';
+import {
+  ApplicationStepStatus,
+  EmailDirection,
+  UserRole,
+} from '../common/enums';
 import { AccessService } from '../common/access.service';
 import { JwtPayload } from '../auth/jwt-payload';
 import { Application } from './application.entity';
 import { ApplicationStep } from './application-step.entity';
 import { UniversityEmail } from '../emails/university-email.entity';
 import { UpdateStepDto } from './dto/update-step.dto';
+import { ReplyEmailDto } from '../emails/dto/reply-email.dto';
 
 @Injectable()
 export class ApplicationsService {
@@ -39,6 +44,7 @@ export class ApplicationsService {
         steps: true,
       },
       order: { updatedAt: 'DESC' },
+      take: 50,
     });
   }
 
@@ -53,23 +59,76 @@ export class ApplicationsService {
       .innerJoinAndSelect('email.application', 'application')
       .leftJoinAndSelect('application.university', 'university')
       .leftJoinAndSelect('application.program', 'program')
-      .where('application.student_id = :studentId', {
+      .leftJoinAndSelect('application.student', 'student')
+      .leftJoinAndSelect('student.consultant', 'consultant')
+      .leftJoinAndSelect('consultant.user', 'consultantUser')
+      .where('application.studentId = :studentId', {
         studentId: resolvedStudentId,
       })
-      .orderBy('email.sent_at', 'DESC')
+      .andWhere('email.direction = :direction', {
+        direction: EmailDirection.TO_STUDENT,
+      })
+      .orderBy('email.sentAt', 'DESC')
+      // Use limit (not take): take+joins triggers a broken TypeORM distinct subquery.
+      .limit(100)
       .getMany();
 
-    return emails.map((email) => ({
+    return emails.map((email) => this.toEmailLogItem(email));
+  }
+
+  async replyToEmail(user: JwtPayload, emailId: string, dto: ReplyEmailDto) {
+    if (user.role !== UserRole.STUDENT || !user.studentProfileId) {
+      throw new ForbiddenException('Only students can reply to consultant emails');
+    }
+
+    const trimmed = dto.body.trim();
+    if (!trimmed) {
+      throw new BadRequestException('Reply body is required');
+    }
+
+    const email = await this.emailsRepo.findOne({
+      where: { id: emailId },
+      relations: {
+        application: {
+          university: true,
+          program: true,
+          student: { consultant: { user: true } },
+        },
+      },
+    });
+    if (!email || email.direction !== EmailDirection.TO_STUDENT) {
+      throw new NotFoundException('Email not found');
+    }
+    if (email.application.studentId !== user.studentProfileId) {
+      throw new ForbiddenException('Cannot reply to this email');
+    }
+    if (email.studentReply) {
+      throw new BadRequestException('You already replied to this email');
+    }
+
+    email.studentReply = trimmed;
+    email.repliedAt = new Date();
+    const saved = await this.emailsRepo.save(email);
+    return this.toEmailLogItem(saved);
+  }
+
+  private toEmailLogItem(email: UniversityEmail) {
+    return {
       id: email.id,
+      direction: email.direction,
       subject: email.subject,
       sender: email.sender,
       sentAt: email.sentAt,
       body: email.body,
+      studentReply: email.studentReply,
+      repliedAt: email.repliedAt,
       applicationId: email.applicationId,
       universityName: email.application.university?.name ?? 'University',
       programName: email.application.program?.name ?? 'Program',
       applicationStatus: email.application.status,
-    }));
+      consultantName:
+        email.application.student?.consultant?.user?.fullName ?? null,
+    };
   }
 
   async getDetail(user: JwtPayload, applicationId: string) {
@@ -91,9 +150,9 @@ export class ApplicationsService {
     application.steps = (application.steps ?? []).sort(
       (a, b) => a.stepNumber - b.stepNumber,
     );
-    application.emails = (application.emails ?? []).sort(
-      (a, b) => b.sentAt.getTime() - a.sentAt.getTime(),
-    );
+    application.emails = (application.emails ?? [])
+      .filter((email) => email.direction === EmailDirection.TO_STUDENT)
+      .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime());
     return application;
   }
 

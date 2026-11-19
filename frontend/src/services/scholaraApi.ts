@@ -9,6 +9,7 @@ import type {
   DocumentItem,
   EmailLogItem,
   HandoverResult,
+  PaymentsSummary,
 } from '../types/domain';
 
 export async function fetchDashboard(studentId?: string) {
@@ -37,16 +38,18 @@ export async function reviewDocument(
   return data;
 }
 
-export async function uploadDocument(id: string, file: File) {
+export async function uploadDocument(
+  id: string,
+  file: File,
+  options?: { signal?: AbortSignal },
+) {
   const form = new FormData();
   form.append('file', file);
-  const { data } = await api.post<DocumentItem>(
-    `/documents/${id}/upload`,
-    form,
-    {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    },
-  );
+  const { data } = await api.post<DocumentItem>(`/documents/${id}/upload`, form, {
+    // Do not set Content-Type manually — browser must include the multipart boundary.
+    timeout: 60_000,
+    signal: options?.signal,
+  });
   return data;
 }
 
@@ -66,6 +69,20 @@ export async function fetchApplications(studentId?: string) {
 
 export async function fetchEmailLog(studentId?: string) {
   const { data } = await api.get<EmailLogItem[]>('/emails', {
+    params: studentId ? { studentId } : undefined,
+  });
+  return data;
+}
+
+export async function replyToConsultantEmail(emailId: string, body: string) {
+  const { data } = await api.post<EmailLogItem>(`/emails/${emailId}/reply`, {
+    body,
+  });
+  return data;
+}
+
+export async function fetchPayments(studentId?: string) {
+  const { data } = await api.get<PaymentsSummary>('/payments', {
     params: studentId ? { studentId } : undefined,
   });
   return data;
@@ -171,14 +188,20 @@ export async function appendLiveTranscriptLine(id: string, text: string) {
   return data;
 }
 
-export async function transcribeCallAudio(id: string, blob: Blob) {
+export async function transcribeCallAudio(
+  id: string,
+  blob: Blob,
+  options?: { signal?: AbortSignal },
+) {
   const form = new FormData();
   form.append('file', blob, `chunk-${Date.now()}.webm`);
   const { data } = await api.post<CallSessionItem>(
     `/calls/${id}/transcribe`,
     form,
     {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      // Let Axios set multipart boundary; Whisper can take longer than default.
+      timeout: 45_000,
+      signal: options?.signal,
     },
   );
   return data;

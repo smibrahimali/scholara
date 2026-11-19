@@ -6,6 +6,8 @@ export async function ensureHotIndexes(dataSource: DataSource): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_student_profiles_consultant_id ON student_profiles (consultant_id)`,
     `CREATE INDEX IF NOT EXISTS idx_documents_student_id ON documents (student_id)`,
     `CREATE INDEX IF NOT EXISTS idx_documents_student_status ON documents (student_id, status)`,
+    `CREATE INDEX IF NOT EXISTS idx_documents_application_id ON documents (application_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_documents_student_application ON documents (student_id, application_id)`,
     `CREATE INDEX IF NOT EXISTS idx_applications_student_id ON applications (student_id)`,
     `CREATE INDEX IF NOT EXISTS idx_application_steps_application_id ON application_steps (application_id)`,
     `CREATE INDEX IF NOT EXISTS idx_call_sessions_student_id ON call_sessions (student_id)`,
@@ -17,6 +19,10 @@ export async function ensureHotIndexes(dataSource: DataSource): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_chat_requests_consultant_status ON chat_requests (consultant_id, status)`,
     `CREATE INDEX IF NOT EXISTS idx_chat_requests_student_status ON chat_requests (student_id, status)`,
     `CREATE INDEX IF NOT EXISTS idx_chat_messages_user_created ON chat_messages (user_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_direct_messages_conversation_created ON direct_messages (conversation_id, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_conversations_consultant_id ON conversations (consultant_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_university_emails_application_id ON university_emails (application_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_document_reviews_document_id ON document_reviews (document_id)`,
   ];
 
   for (const sql of statements) {

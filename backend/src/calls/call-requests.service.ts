@@ -79,7 +79,8 @@ export class CallRequestsService {
         rows
           .filter(
             (r) =>
-              r.status === CallRequestStatus.APPROVED && Boolean(r.callSessionId),
+              r.status === CallRequestStatus.APPROVED &&
+              Boolean(r.callSessionId),
           )
           .map((r) => r.callSessionId as string),
       ),

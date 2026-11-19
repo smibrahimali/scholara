@@ -10,11 +10,13 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { DocumentStatus } from '../common/enums';
+import { Application } from '../applications/application.entity';
 import { StudentProfile } from '../students/student-profile.entity';
 import { DocumentReview } from './document-review.entity';
 
 @Entity('documents')
 @Index('idx_documents_student_status', ['studentId', 'status'])
+@Index('idx_documents_student_application', ['studentId', 'applicationId'])
 export class Document {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -28,6 +30,18 @@ export class Document {
   })
   @JoinColumn({ name: 'student_id' })
   student!: StudentProfile;
+
+  /** Null = general document; set = university-specific for that application. */
+  @Index('idx_documents_application_id')
+  @Column({ name: 'application_id', type: 'uuid', nullable: true })
+  applicationId!: string | null;
+
+  @ManyToOne(() => Application, (application) => application.documents, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'application_id' })
+  application?: Application | null;
 
   @Column()
   title!: string;

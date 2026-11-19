@@ -1,16 +1,29 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import { FloatingChatbot } from '../components/chat/FloatingChatbot';
 import { BottomTabBar } from '../components/layout/BottomTabBar';
 import { ConsultantDossierBanner } from '../components/layout/ConsultantDossierBanner';
 import { MobileWrapper } from '../components/layout/MobileWrapper';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/cn';
 
+const FloatingChatbot = lazy(() =>
+  import('../components/chat/FloatingChatbot').then((m) => ({
+    default: m.FloatingChatbot,
+  })),
+);
+
 function studentIdFromPath(pathname: string): string | undefined {
   const match = pathname.match(/\/app\/students\/([^/]+)/);
   return match?.[1];
+}
+
+/** Student `/app/messages` or consultant `/app/students/:id/messages`. */
+function isMessagingPath(pathname: string): boolean {
+  return (
+    pathname === '/app/messages' ||
+    /\/app\/students\/[^/]+\/messages\/?$/.test(pathname)
+  );
 }
 
 export function AppLayout() {
@@ -18,6 +31,7 @@ export function AppLayout() {
   const { pathname } = useLocation();
   const studentId = studentIdFromPath(pathname);
   const isLiveCall = pathname.includes('/live-call/');
+  const isMessaging = isMessagingPath(pathname);
   const showDossierChrome =
     user?.role === 'CONSULTANT' && Boolean(studentId) && !isLiveCall;
 
@@ -32,9 +46,14 @@ export function AppLayout() {
       <main
         id="scholara-main"
         className={cn(
-          'no-scrollbar relative flex-1 overflow-x-hidden overflow-y-auto',
-          isLiveCall ? 'pb-4' : 'pb-40',
-          showDossierChrome ? 'pt-0' : 'pt-8',
+          'no-scrollbar relative flex-1 overflow-x-hidden',
+          isMessaging ? 'flex flex-col overflow-hidden' : 'overflow-y-auto',
+          isLiveCall
+            ? 'pb-4'
+            : isMessaging
+              ? 'pb-[var(--chrome-bottom)]'
+              : 'pb-[calc(var(--chrome-bottom)+1.5rem)]',
+          showDossierChrome ? 'pt-0' : isMessaging ? 'pt-3' : 'pt-7',
         )}
       >
         {showDossierChrome && studentId ? (
@@ -42,9 +61,11 @@ export function AppLayout() {
         ) : null}
         <div
           className={cn(
-            'px-5',
-            showDossierChrome && 'pt-5',
-            !isLiveCall && 'pb-12',
+            isMessaging
+              ? 'flex min-h-0 flex-1 flex-col px-0 pb-0'
+              : 'px-5',
+            showDossierChrome && !isMessaging && 'pt-5',
+            !isLiveCall && !isMessaging && 'pb-8',
           )}
         >
           <ErrorBoundary>
@@ -52,9 +73,11 @@ export function AppLayout() {
           </ErrorBoundary>
         </div>
       </main>
-      {!isLiveCall ? (
+      {!isLiveCall && !isMessaging ? (
         <ErrorBoundary fallback={null}>
-          <FloatingChatbot studentId={studentId} />
+          <Suspense fallback={null}>
+            <FloatingChatbot studentId={studentId} />
+          </Suspense>
         </ErrorBoundary>
       ) : null}
       {!isLiveCall ? <BottomTabBar /> : null}

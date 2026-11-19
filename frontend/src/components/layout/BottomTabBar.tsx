@@ -4,6 +4,7 @@ import {
   FileText,
   GraduationCap,
   Home,
+  MoreHorizontal,
   User,
   type LucideIcon,
 } from 'lucide-react';
@@ -19,29 +20,33 @@ type Tab = {
 
 const STUDENT_TABS: Tab[] = [
   { to: '/app', end: true, label: 'Home', Icon: Home },
-  { to: '/app/applications', label: 'Application', Icon: GraduationCap },
+  { to: '/app/applications', label: 'Applications', Icon: GraduationCap },
   { to: '/app/documents', label: 'Documents', Icon: FileText },
-  { to: '/app/profile', label: 'Profile', Icon: User },
+  { to: '/app/profile', label: 'More', Icon: MoreHorizontal },
 ];
 
 const CONSULTANT_TABS: Tab[] = [
   { to: '/app', end: true, label: 'Home', Icon: Home },
-  { to: '/app/profile', label: 'Profile', Icon: User },
+  { to: '/app/profile', label: 'Account', Icon: User },
 ];
 
-/** Profile hub includes Support / emails / messages nested under profile IA. */
-function isProfileHubPath(pathname: string) {
+/** Secondary hub destinations under More (student/guardian). */
+function isMoreHubPath(pathname: string) {
   return (
     pathname === '/app/profile' ||
+    pathname.startsWith('/app/profile/') ||
     pathname.startsWith('/app/consultant') ||
     pathname.startsWith('/app/emails') ||
     pathname.startsWith('/app/messages')
   );
 }
 
-function isTabActive(tab: Tab, pathname: string) {
+function isTabActive(tab: Tab, pathname: string, role?: string) {
   if (tab.to === '/app/profile') {
-    return isProfileHubPath(pathname);
+    if (role === 'CONSULTANT') {
+      return pathname === '/app/profile' || pathname.startsWith('/app/profile/');
+    }
+    return isMoreHubPath(pathname);
   }
   if (tab.end) {
     return pathname === tab.to;
@@ -56,9 +61,9 @@ export function BottomTabBar() {
 
   return (
     <nav
-      className="fixed bottom-0 left-1/2 z-50 w-full max-w-phone -translate-x-1/2 border-t border-[#EBE8E0]/80 bg-[#F9F8F6]/92 px-2 pt-2 shadow-nav backdrop-blur-md"
+      className="fixed bottom-0 left-1/2 z-50 w-full max-w-phone -translate-x-1/2 border-t border-[#EBE8E0]/90 bg-[#F9F8F6]/96 px-2 pt-1.5 backdrop-blur-[6px] shadow-nav"
       style={{
-        paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 0px))',
+        paddingBottom: 'max(0.85rem, env(safe-area-inset-bottom, 0px))',
       }}
     >
       <ul
@@ -68,39 +73,39 @@ export function BottomTabBar() {
         )}
       >
         {tabs.map((tab) => {
-          const active = isTabActive(tab, pathname);
+          const active = isTabActive(tab, pathname, user?.role);
           return (
             <li key={tab.to}>
               <NavLink
                 to={tab.to}
                 end={tab.end}
-                className="relative flex min-h-14 w-full flex-col items-center justify-center gap-1 overflow-visible px-0.5 no-underline"
+                className="relative flex min-h-12 w-full flex-col items-center justify-center gap-0.5 overflow-visible px-0.5 no-underline"
                 aria-current={active ? 'page' : undefined}
               >
                 <motion.span
                   animate={{ y: active ? -1 : 0 }}
-                  className="flex flex-col items-center gap-0.5"
+                  className="flex flex-col items-center gap-1"
                 >
                   <tab.Icon
                     className={cn(
-                      'h-5 w-5',
-                      active ? 'text-[#111827]' : 'text-[#6B7280]',
+                      'h-[1.15rem] w-[1.15rem]',
+                      active ? 'text-[#111827]' : 'text-[#8B92A5]',
                     )}
-                    strokeWidth={1.5}
+                    strokeWidth={active ? 1.75 : 1.5}
                   />
                   {active ? (
                     <motion.span
                       layoutId="tab-dot"
-                      className="h-1 w-1 rounded-full bg-[#C8963E]"
+                      className="h-0.5 w-4 rounded-full bg-[#C8963E]"
                     />
                   ) : (
-                    <span className="h-1 w-1" aria-hidden />
+                    <span className="h-0.5 w-4" aria-hidden />
                   )}
                 </motion.span>
                 <span
                   className={cn(
-                    'max-w-full truncate text-center text-[11px] font-medium leading-tight',
-                    active ? 'text-[#1E2430]' : 'text-[#6B7280]',
+                    'max-w-full truncate text-center text-[0.6875rem] font-medium leading-tight',
+                    active ? 'text-[#1E2430]' : 'text-[#8B92A5]',
                   )}
                 >
                   {tab.label}

@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { UserRole } from '../common/enums';
 import { JwtPayload } from '../auth/jwt-payload';
 import { AccessService } from '../common/access.service';
@@ -41,6 +41,32 @@ export class MessagingService {
       readAt: message.readAt,
       createdAt: message.createdAt,
     };
+  }
+
+  /** One round-trip for latest messages across many conversations (avoids N+1). */
+  private async loadLatestMessagesByConversation(
+    conversationIds: string[],
+  ): Promise<Map<string, DirectMessage>> {
+    const map = new Map<string, DirectMessage>();
+    if (conversationIds.length === 0) return map;
+
+    const rows: Array<{ id: string }> = await this.messagesRepo.query(
+      `SELECT DISTINCT ON (conversation_id) id
+       FROM direct_messages
+       WHERE conversation_id = ANY($1::uuid[])
+       ORDER BY conversation_id, created_at DESC`,
+      [conversationIds],
+    );
+    if (rows.length === 0) return map;
+
+    const messages = await this.messagesRepo.find({
+      where: { id: In(rows.map((row) => row.id)) },
+      relations: { sender: true },
+    });
+    for (const message of messages) {
+      map.set(message.conversationId, message);
+    }
+    return map;
   }
 
   private toSessionDto(session: ChatSession) {
@@ -216,16 +242,15 @@ export class MessagingService {
         order: { updatedAt: 'DESC' },
       });
 
-      const items = [];
-      for (const conversation of conversations) {
-        const lastMessage = await this.messagesRepo.findOne({
-          where: { conversationId: conversation.id },
-          relations: { sender: true },
-          order: { createdAt: 'DESC' },
-        });
-        items.push(this.toConversationDto(conversation, lastMessage));
-      }
-      return items;
+      const lastByConversation = await this.loadLatestMessagesByConversation(
+        conversations.map((c) => c.id),
+      );
+      return conversations.map((conversation) =>
+        this.toConversationDto(
+          conversation,
+          lastByConversation.get(conversation.id) ?? null,
+        ),
+      );
     }
 
     if (user.role === UserRole.STUDENT) {
@@ -262,34 +287,22 @@ export class MessagingService {
     limit = 50,
     before?: string,
   ) {
-    const conversation = await this.assertCanAccessConversation(
-      user,
-      conversationId,
-    );
-
-    const open = await this.sessionsRepo.findOne({
-      where: {
-        studentId: conversation.studentId,
-        endedAt: IsNull(),
-      },
-    });
-    if (!open) {
-      return [];
-    }
+    await this.assertCanAccessConversation(user, conversationId);
 
     const take = Math.min(Math.max(limit, 1), 100);
+    // Use entity property paths (createdAt / conversationId) — DB column
+    // names in orderBy break TypeORM joins (databaseName undefined).
     const qb = this.messagesRepo
       .createQueryBuilder('m')
       .leftJoinAndSelect('m.sender', 'sender')
-      .where('m.conversation_id = :conversationId', { conversationId })
-      .andWhere('m.chat_session_id = :sessionId', { sessionId: open.id })
-      .orderBy('m.created_at', 'DESC')
+      .where('m.conversationId = :conversationId', { conversationId })
+      .orderBy('m.createdAt', 'DESC')
       .take(take);
 
     if (before) {
       const pivot = await this.messagesRepo.findOne({ where: { id: before } });
       if (pivot) {
-        qb.andWhere('m.created_at < :before', { before: pivot.createdAt });
+        qb.andWhere('m.createdAt < :before', { before: pivot.createdAt });
       }
     }
 
@@ -327,23 +340,10 @@ export class MessagingService {
       }
     }
 
-    const open = await this.sessionsRepo.findOne({
-      where: {
-        studentId: conversation.studentId,
-        endedAt: IsNull(),
-      },
-      order: { startedAt: 'DESC' },
-    });
-    if (!open) {
-      throw new BadRequestException(
-        'No open encrypted chat. Schedule a 1:1 chat and wait for your consultant to start it.',
-      );
-    }
-
     const saved = await this.messagesRepo.save(
       this.messagesRepo.create({
         conversationId,
-        chatSessionId: open.id,
+        chatSessionId: null,
         senderUserId: user.sub,
         body: trimmed,
         readAt: null,

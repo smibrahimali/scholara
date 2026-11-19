@@ -10,6 +10,8 @@ const baseURL =
 export const api = axios.create({
   baseURL,
   headers: { 'Content-Type': 'application/json' },
+  // Ordinary REST; long-running chat/transcribe override per request.
+  timeout: 20_000,
 });
 
 api.interceptors.request.use((config) => {

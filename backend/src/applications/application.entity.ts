@@ -16,6 +16,7 @@ import { Program } from '../programs/program.entity';
 import { ApplicationStep } from './application-step.entity';
 import { UniversityEmail } from '../emails/university-email.entity';
 import { ApplicationStatusHistory } from './application-status-history.entity';
+import { Document } from '../documents/document.entity';
 
 @Entity('applications')
 export class Application {
@@ -68,7 +69,11 @@ export class Application {
   @Column({ name: 'fee_paid_at', type: 'timestamptz', nullable: true })
   feePaidAt!: Date | null;
 
-  @Column({ name: 'enrollment_confirmed_at', type: 'timestamptz', nullable: true })
+  @Column({
+    name: 'enrollment_confirmed_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
   enrollmentConfirmedAt!: Date | null;
 
   @Column({ name: 'waitlist_position', type: 'int', nullable: true })
@@ -103,6 +108,9 @@ export class Application {
 
   @OneToMany(() => ApplicationStatusHistory, (history) => history.application)
   statusHistory?: ApplicationStatusHistory[];
+
+  @OneToMany(() => Document, (document) => document.application)
+  documents?: Document[];
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;

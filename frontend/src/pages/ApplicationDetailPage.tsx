@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { ArrowLeft, Mail } from 'lucide-react';
+import { Mail } from 'lucide-react';
 import {
   AdmissionTimeline,
   type AdmissionTimelineStep,
 } from '../components/AdmissionTimeline';
+import { BackLink } from '../components/ivy/BackLink';
 import { PageMotion } from '../components/ivy/PageMotion';
 import { ScreenTitle } from '../components/ivy/ScreenTitle';
 import { TapButton } from '../components/ivy/TapButton';
@@ -77,6 +78,7 @@ export function ApplicationDetailPage() {
   const { user } = useAuth();
   const canEditNotes = user?.role === 'CONSULTANT';
   const celebratedRef = useRef(false);
+  const [showFullTimeline, setShowFullTimeline] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['application', id],
@@ -91,88 +93,138 @@ export function ApplicationDetailPage() {
     }
   }, [data?.status]);
 
+  const consultantName =
+    data?.student?.consultant?.user?.fullName ?? 'Assigned consultant';
+  const timelineSteps = useMemo(
+    () =>
+      (data?.steps ?? []).map((step) => ({
+        stepNumber: step.stepNumber,
+        name: step.label,
+        status: toTimelineStatus(step.status),
+        date: step.completedAt ? formatDisplayDate(step.completedAt) : null,
+        approvedBy:
+          step.status === 'COMPLETED' || step.status === 'IN_PROGRESS'
+            ? consultantName
+            : null,
+        note: canEditNotes ? null : step.notes,
+      })),
+    [canEditNotes, consultantName, data?.steps],
+  );
+
   if (isLoading) {
     return (
-      <p className="text-sm text-muted-foreground">Loading application…</p>
+      <div className="space-y-3" aria-busy="true" aria-label="Loading application">
+        <div className="skeleton h-8 w-1/2" />
+        <div className="skeleton h-24 w-full" />
+        <div className="skeleton h-48 w-full" />
+      </div>
     );
   }
   if (error || !data) {
     return (
-      <p className="text-sm text-destructive">Could not load application.</p>
+      <div className="ivy-card text-sm text-destructive">
+        Could not load application. Try going back and opening it again.
+      </div>
     );
   }
 
   const backTo = studentId
     ? `/app/students/${studentId}/applications`
     : '/app/applications';
-  const consultantName =
-    data.student?.consultant?.user?.fullName ?? 'Assigned consultant';
+  const emailsTo = studentId
+    ? `/app/students/${studentId}/emails`
+    : '/app/emails';
   const notesByStep = new Map(
     (data.steps ?? []).map((s) => [s.stepNumber, s.notes] as const),
   );
+  const emailPreview = (data.emails ?? []).slice(0, 2);
+  const currentTimelineStep = timelineSteps.find((s) => s.status === 'Current');
+  const compactSteps = currentTimelineStep
+    ? timelineSteps.filter(
+        (s) =>
+          s.status === 'Current' ||
+          s.stepNumber === currentTimelineStep.stepNumber,
+      )
+    : timelineSteps.slice(0, 3);
 
   return (
     <PageMotion>
-      <Link
-        to={backTo}
-        className="mb-4 inline-flex min-h-12 items-center gap-1.5 text-sm font-semibold text-muted-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to journey
-      </Link>
-
-      <ScreenTitle eyebrow={data.program.name} title={data.university.name} />
+      <div className="mb-4 flex items-start gap-2">
+        <BackLink
+          to={backTo}
+          label="Back to applications"
+          className="mb-0"
+        />
+        <ScreenTitle eyebrow={data.program.name} title={data.university.name} />
+      </div>
       <p className="mb-5 text-sm text-muted-foreground">
-        {data.decisionNotes ?? 'Track the 12-step admission lifecycle.'}
+        {data.decisionNotes ??
+          'Track application progress and related university updates.'}
       </p>
 
-      <div className="mb-5 grid gap-2">
-        {data.entryScore ? (
-          <div className="rounded-xl border border-border bg-card px-4 py-3">
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Entry score
+      {currentTimelineStep ? (
+        <div className="mb-5 rounded-[1.125rem] border border-gold/35 bg-gold-soft/40 p-4">
+          <p className="label-caps">Current stage</p>
+          <p className="mt-1 font-sans text-lg font-semibold text-foreground">
+            {currentTimelineStep.name}
+          </p>
+          {currentTimelineStep.note ? (
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              {currentTimelineStep.note}
             </p>
-            <p className="font-serif text-xl font-semibold">
-              {data.entryScore}/100
+          ) : (
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              This is the active step in the admission process.
             </p>
-          </div>
-        ) : null}
-        {data.meritListDate ? (
-          <div className="rounded-xl border border-border bg-card px-4 py-3">
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Merit list
-            </p>
-            <p className="font-serif text-xl font-semibold">
-              {data.meritListDate}
-            </p>
-          </div>
-        ) : null}
-        {data.feeDueDate ? (
-          <div className="rounded-xl border border-border bg-card px-4 py-3">
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Fee due
-            </p>
-            <p className="font-serif text-xl font-semibold">
-              {data.feeCurrency} {data.feeAmount}
-            </p>
-            <p className="text-xs text-muted-foreground">by {data.feeDueDate}</p>
-          </div>
-        ) : null}
-      </div>
+          )}
+        </div>
+      ) : null}
 
-      <h2 className="mb-3 text-xl font-semibold">12-step lifecycle</h2>
+      <details className="mb-5 rounded-[1.125rem] border border-border bg-card open:pb-1">
+        <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-foreground">
+          Scores, fees & merit details
+        </summary>
+        <div className="grid gap-2 border-t border-border px-4 py-3">
+          {data.entryScore ? (
+            <div className="rounded-xl bg-secondary/60 px-4 py-3">
+              <p className="label-meta">Entry score</p>
+              <p className="editorial-title text-xl">{data.entryScore}/100</p>
+            </div>
+          ) : null}
+          {data.meritListDate ? (
+            <div className="rounded-xl bg-secondary/60 px-4 py-3">
+              <p className="label-meta">Merit list</p>
+              <p className="editorial-title text-xl">{data.meritListDate}</p>
+            </div>
+          ) : null}
+          {data.feeDueDate ? (
+            <div className="rounded-xl bg-secondary/60 px-4 py-3">
+              <p className="label-meta">Fee due</p>
+              <p className="editorial-title text-xl">
+                {data.feeCurrency} {data.feeAmount}
+              </p>
+              <p className="text-xs text-muted-foreground">by {data.feeDueDate}</p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No score or fee details recorded for this application yet.
+            </p>
+          )}
+        </div>
+      </details>
+
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">Application progress</h2>
+        <button
+          type="button"
+          className="text-xs font-semibold text-gold-ink"
+          onClick={() => setShowFullTimeline((v) => !v)}
+        >
+          {showFullTimeline ? 'Show current only' : 'Show full timeline'}
+        </button>
+      </div>
       <AdmissionTimeline
-        steps={(data.steps ?? []).map((step) => ({
-          stepNumber: step.stepNumber,
-          name: step.label,
-          status: toTimelineStatus(step.status),
-          date: step.completedAt ? formatDisplayDate(step.completedAt) : null,
-          approvedBy:
-            step.status === 'COMPLETED' || step.status === 'IN_PROGRESS'
-              ? consultantName
-              : null,
-          note: canEditNotes ? null : step.notes,
-        }))}
+        steps={showFullTimeline ? timelineSteps : compactSteps}
         renderStepAction={
           canEditNotes
             ? (step: AdmissionTimelineStep) =>
@@ -190,25 +242,35 @@ export function ApplicationDetailPage() {
       <div className="mt-8 space-y-3">
         <div className="flex items-center gap-2">
           <Mail className="h-4 w-4 text-gold-ink" />
-          <h2 className="text-xl font-semibold">University emails</h2>
+          <h2 className="text-lg font-semibold">Consultant emails</h2>
         </div>
-        {(data.emails ?? []).map((email) => (
+        {emailPreview.map((email) => (
           <article
             key={email.id}
             className="rounded-2xl border border-border bg-card p-4 shadow-soft"
           >
-            <p className="font-serif text-base font-semibold">{email.subject}</p>
+            <p className="editorial-title text-base">{email.subject}</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {email.sender} · {formatDisplayDate(email.sentAt)}
+              From consultant · {email.sender} ·{' '}
+              {formatDisplayDate(email.sentAt)}
             </p>
-            <p className="mt-2 whitespace-pre-wrap text-sm">{email.body}</p>
+            <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+              {email.body}
+            </p>
           </article>
         ))}
-        {(data.emails ?? []).length === 0 ? (
+        {emailPreview.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No emails seeded for this application.
+            No consultant emails for this application yet.
           </p>
-        ) : null}
+        ) : (
+          <Link
+            to={emailsTo}
+            className="inline-flex min-h-12 items-center text-sm font-semibold text-gold-ink underline-offset-2 hover:underline"
+          >
+            View consultant emails
+          </Link>
+        )}
       </div>
     </PageMotion>
   );

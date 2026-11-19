@@ -1,16 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Eye, FileText, Upload } from 'lucide-react';
 import { toast } from 'sonner';
+import { BackLink } from '../components/ivy/BackLink';
 import { EmptyState } from '../components/ivy/EmptyState';
 import { PageMotion } from '../components/ivy/PageMotion';
+import { ReadOnlyBanner } from '../components/ivy/ReadOnlyBanner';
 import { ScreenTitle } from '../components/ivy/ScreenTitle';
 import { StatusBadge, toDocStatus } from '../components/ivy/StatusBadge';
 import { TapButton } from '../components/ivy/TapButton';
 import { useAuth } from '../context/AuthContext';
 import { fireScholaraConfetti } from '../lib/confetti';
 import { cn } from '../lib/cn';
+import { getBackPath, hasNavFrom } from '../lib/navigation';
 import { formatDisplayDate } from '../lib/statusMaps';
 import {
   fetchDocumentDownloadUrl,
@@ -19,6 +23,32 @@ import {
   uploadDocument,
 } from '../services/scholaraApi';
 import type { DocumentItem } from '../types/domain';
+
+type DocumentsTab = 'general' | 'university';
+
+function isUniversityDoc(doc: DocumentItem) {
+  return doc.scope === 'UNIVERSITY' || Boolean(doc.applicationId);
+}
+
+function groupByUniversity(docs: DocumentItem[]) {
+  const groups = new Map<
+    string,
+    { key: string; universityName: string; docs: DocumentItem[] }
+  >();
+  for (const doc of docs) {
+    const key = doc.applicationId ?? doc.universityId ?? doc.universityName ?? 'unknown';
+    const universityName = doc.universityName?.trim() || 'University';
+    const existing = groups.get(key);
+    if (existing) {
+      existing.docs.push(doc);
+    } else {
+      groups.set(key, { key, universityName, docs: [doc] });
+    }
+  }
+  return Array.from(groups.values()).sort((a, b) =>
+    a.universityName.localeCompare(b.universityName),
+  );
+}
 
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 const ALLOWED_UPLOAD_MIME = new Set([
@@ -78,14 +108,12 @@ function DocCard({
             {doc.title}
           </p>
           <p className="mb-2.5 text-sm text-muted-foreground">
-            {doc.documentType} · Updated {formatDisplayDate(doc.updatedAt)}
+            {doc.universityName
+              ? `${doc.universityName} · ${doc.documentType}`
+              : doc.documentType}{' '}
+            · Updated {formatDisplayDate(doc.updatedAt)}
           </p>
           <StatusBadge status={status} />
-          {doc.status === 'VERIFIED' ? (
-            <p className="status-success mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold">
-              Verified by Consultant
-            </p>
-          ) : null}
         </div>
       </div>
 
@@ -98,8 +126,8 @@ function DocCard({
             className="overflow-hidden"
           >
             <div className="status-danger mt-4 rounded-xl p-3.5">
-              <p className="text-xs font-medium uppercase tracking-wider">
-                Reason from Consultant
+              <p className="text-xs font-semibold text-destructive">
+                What to fix
               </p>
               <p className="mt-1.5 text-sm text-foreground">
                 {doc.rejectionReason}
@@ -142,7 +170,7 @@ function DocCard({
             <TapButton
               disabled={reviewing}
               onClick={onApprove}
-              className="btn-primary flex flex-1 items-center justify-center rounded-xl bg-success border-success text-sm font-semibold text-white"
+              className="flex flex-1 items-center justify-center rounded-xl bg-success text-sm font-semibold text-white shadow-btn"
             >
               {reviewing ? 'Saving…' : 'Approve'}
             </TapButton>
@@ -203,12 +231,17 @@ export function DocumentsPage({
   canReview?: boolean;
 }) {
   const { user } = useAuth();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
+  const [tab, setTab] = useState<DocumentsTab>('general');
+  const backFallback = studentId ? `/app/students/${studentId}` : '/app';
+  const showBack = hasNavFrom(location);
+  const backTo = getBackPath(location, backFallback);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['documents', studentId ?? user?.id],
+    queryKey: ['documents', studentId ?? 'self'],
     queryFn: () => fetchDocuments(studentId),
   });
 
@@ -228,8 +261,6 @@ export function DocumentsPage({
       void queryClient.invalidateQueries({ queryKey: ['documents'] });
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       void queryClient.invalidateQueries({ queryKey: ['consultant-students'] });
-      void queryClient.invalidateQueries({ queryKey: ['applications'] });
-      void queryClient.invalidateQueries({ queryKey: ['chat-messages'] });
     },
     onError: () => toast.error('Review failed'),
   });
@@ -243,8 +274,6 @@ export function DocumentsPage({
       void queryClient.invalidateQueries({ queryKey: ['documents'] });
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       void queryClient.invalidateQueries({ queryKey: ['consultant-students'] });
-      void queryClient.invalidateQueries({ queryKey: ['applications'] });
-      void queryClient.invalidateQueries({ queryKey: ['chat-messages'] });
     },
     onError: (err: unknown) => {
       const message =
@@ -279,30 +308,152 @@ export function DocumentsPage({
     );
   }
 
-  const counts = {
-    verified: data.filter((d) => d.status === 'VERIFIED').length,
-    review: data.filter((d) => d.status === 'UNDER_REVIEW').length,
-    missing: data.filter((d) => d.status === 'NOT_UPLOADED').length,
-    rejected: data.filter((d) => d.status === 'REJECTED').length,
-  };
+  const generalDocs = data.filter((d) => !isUniversityDoc(d));
+  const universityDocs = data.filter((d) => isUniversityDoc(d));
+  const visibleDocs = tab === 'general' ? generalDocs : universityDocs;
+  const universityGroups = groupByUniversity(universityDocs);
+
+  const actionRequired = visibleDocs.filter(
+    (d) => d.status === 'NOT_UPLOADED' || d.status === 'REJECTED',
+  );
+  const underReview = visibleDocs.filter((d) => d.status === 'UNDER_REVIEW');
+  const approved = visibleDocs.filter((d) => d.status === 'VERIFIED');
   const canUpload = user?.role === 'STUDENT';
   const isGuardian = user?.role === 'GUARDIAN';
-  const allVerified =
-    data.length > 0 && counts.verified === data.length;
+  const allApproved =
+    visibleDocs.length > 0 && approved.length === visibleDocs.length;
+
+  const renderDocCard = (doc: DocumentItem) => (
+    <DocCard
+      key={doc.id}
+      doc={doc}
+      canReview={canReview}
+      canUpload={canUpload}
+      uploading={uploadMutation.isPending && uploadTargetId === doc.id}
+      uploadLocked={uploadMutation.isPending}
+      reviewing={reviewMutation.isPending}
+      onApprove={() => {
+        if (reviewMutation.isPending) return;
+        reviewMutation.mutate({ id: doc.id, decision: 'APPROVED' });
+      }}
+      onReject={(reason) => {
+        if (reviewMutation.isPending) return;
+        reviewMutation.mutate({
+          id: doc.id,
+          decision: 'REJECTED',
+          reason,
+        });
+      }}
+      onPickFile={() => {
+        if (uploadMutation.isPending) {
+          toast.error('Wait for the current upload to finish');
+          return;
+        }
+        setUploadTargetId(doc.id);
+        fileInputRef.current?.click();
+      }}
+      onView={() => {
+        void fetchDocumentDownloadUrl(doc.id)
+          .then(({ url }) => {
+            window.open(url, '_blank', 'noopener,noreferrer');
+          })
+          .catch((err: unknown) => {
+            const message =
+              err &&
+              typeof err === 'object' &&
+              'response' in err &&
+              err.response &&
+              typeof err.response === 'object' &&
+              'data' in err.response &&
+              err.response.data &&
+              typeof err.response.data === 'object' &&
+              'message' in err.response.data
+                ? String(
+                    (err.response.data as { message: string }).message,
+                  )
+                : 'File is missing from storage. Please upload again.';
+            toast.error(message);
+            void queryClient.invalidateQueries({
+              queryKey: ['documents'],
+            });
+            void queryClient.invalidateQueries({
+              queryKey: ['dashboard'],
+            });
+          });
+      }}
+    />
+  );
+
+  function renderGrouped(docs: DocumentItem[]) {
+    const action = docs.filter(
+      (d) => d.status === 'NOT_UPLOADED' || d.status === 'REJECTED',
+    );
+    const review = docs.filter((d) => d.status === 'UNDER_REVIEW');
+    const done = docs.filter((d) => d.status === 'VERIFIED');
+    return (
+      <div className="space-y-6">
+        {action.length > 0 ? (
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold text-foreground">
+              Action required
+            </h3>
+            <div className="space-y-4">{action.map(renderDocCard)}</div>
+          </section>
+        ) : null}
+        {review.length > 0 ? (
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold text-foreground">
+              Waiting for review
+            </h3>
+            <div className="space-y-4">{review.map(renderDocCard)}</div>
+          </section>
+        ) : null}
+        {done.length > 0 ? (
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold text-foreground">Approved</h3>
+            <div className="space-y-4">{done.map(renderDocCard)}</div>
+          </section>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <PageMotion>
       <div className="space-y-8">
-        <ScreenTitle
-          eyebrow="Secure Records"
-          title={
-            canReview
-              ? 'Student Documents'
-              : isGuardian
-                ? 'Student Documents'
-                : 'Your Documents'
-          }
-        />
+        <div>
+          {showBack ? (
+            <div className="mb-3 flex items-start gap-2">
+              <BackLink to={backTo} className="mb-0" />
+              <div className="min-w-0 flex-1">
+                <ScreenTitle
+                  eyebrow="Paperwork"
+                  title={
+                    canReview
+                      ? 'Student documents'
+                      : isGuardian
+                        ? 'Student documents'
+                        : 'Your documents'
+                  }
+                />
+              </div>
+            </div>
+          ) : (
+            <ScreenTitle
+              eyebrow="Paperwork"
+              title={
+                canReview
+                  ? 'Student documents'
+                  : isGuardian
+                    ? 'Student documents'
+                    : 'Your documents'
+              }
+            />
+          )}
+          {isGuardian ? (
+            <ReadOnlyBanner studentFirstName="your linked student" />
+          ) : null}
+        </div>
         <input
           ref={fileInputRef}
           type="file"
@@ -335,108 +486,109 @@ export function DocumentsPage({
             uploadMutation.mutate({ id, file });
           }}
         />
-        <div className="grid grid-cols-4 gap-2 text-center">
+
+        <div
+          role="tablist"
+          aria-label="Document categories"
+          className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-secondary p-1"
+        >
           {(
             [
-              ['Verified', counts.verified, 'text-success'],
-              ['In Review', counts.review, 'text-gold-ink'],
-              ['Missing', counts.missing, 'text-muted-foreground'],
-              ['Rejected', counts.rejected, 'text-destructive'],
+              ['general', 'General', generalDocs.length],
+              ['university', 'By university', universityDocs.length],
+            ] as const
+          ).map(([id, label, count]) => {
+            const active = tab === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setTab(id)}
+                className={cn(
+                  'rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors',
+                  active
+                    ? 'bg-card text-foreground shadow-sm'
+                    : 'text-muted-foreground',
+                )}
+              >
+                {label}
+                <span
+                  className={cn(
+                    'ml-1.5 text-xs font-medium',
+                    active ? 'text-gold-ink' : 'text-muted-foreground/80',
+                  )}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 text-center">
+          {(
+            [
+              ['Action needed', actionRequired.length, 'text-destructive'],
+              ['In review', underReview.length, 'text-gold-ink'],
+              ['Approved', approved.length, 'text-success'],
             ] as const
           ).map(([label, n, color]) => (
             <div key={label} className="ivy-card py-3">
               <p className={cn('font-sans text-xl font-semibold', color)}>
                 {n}
               </p>
-              <p className="mt-0.5 text-[10px] font-medium text-muted-foreground">
+              <p className="mt-0.5 text-[0.6875rem] font-medium text-muted-foreground">
                 {label}
               </p>
             </div>
           ))}
         </div>
-        {allVerified ? (
+        {allApproved ? (
           <p className="status-success rounded-xl px-3.5 py-2.5 text-center text-xs font-semibold">
-            All {data.length} documents verified by consultant
+            All {visibleDocs.length}{' '}
+            {tab === 'general' ? 'general' : 'university'} documents are approved
           </p>
         ) : null}
-        {data.length === 0 ? (
+        {visibleDocs.length === 0 ? (
           <div className="ivy-card !p-0">
             <EmptyState
               icon={FileText}
-              title="No documents yet"
+              title={
+                tab === 'general'
+                  ? 'No general documents yet'
+                  : 'No university documents yet'
+              }
               description={
-                canUpload
-                  ? 'Upload required files so your consultant can begin review.'
-                  : isGuardian
-                    ? 'Your linked student has not uploaded any documents yet.'
-                    : 'This student has not uploaded any documents yet.'
+                tab === 'general'
+                  ? canUpload
+                    ? 'Upload shared files like Civil ID, academic transcript, and passport photograph.'
+                    : isGuardian
+                      ? 'Your linked student has not uploaded general documents yet.'
+                      : 'This student has not uploaded general documents yet.'
+                  : canUpload
+                    ? 'University-specific forms and receipts will appear here per application.'
+                    : isGuardian
+                      ? 'Your linked student has no university-specific documents yet.'
+                      : 'This student has no university-specific documents yet.'
               }
             />
           </div>
+        ) : tab === 'general' ? (
+          renderGrouped(generalDocs)
         ) : (
-          <div className="space-y-5">
-            {data.map((doc) => (
-              <DocCard
-                key={doc.id}
-                doc={doc}
-                canReview={canReview}
-                canUpload={canUpload}
-                uploading={
-                  uploadMutation.isPending && uploadTargetId === doc.id
-                }
-                uploadLocked={uploadMutation.isPending}
-                reviewing={reviewMutation.isPending}
-                onApprove={() => {
-                  if (reviewMutation.isPending) return;
-                  reviewMutation.mutate({ id: doc.id, decision: 'APPROVED' });
-                }}
-                onReject={(reason) => {
-                  if (reviewMutation.isPending) return;
-                  reviewMutation.mutate({
-                    id: doc.id,
-                    decision: 'REJECTED',
-                    reason,
-                  });
-                }}
-                onPickFile={() => {
-                  if (uploadMutation.isPending) {
-                    toast.error('Wait for the current upload to finish');
-                    return;
-                  }
-                  setUploadTargetId(doc.id);
-                  fileInputRef.current?.click();
-                }}
-                onView={() => {
-                  void fetchDocumentDownloadUrl(doc.id)
-                    .then(({ url }) => {
-                      window.open(url, '_blank', 'noopener,noreferrer');
-                    })
-                    .catch((err: unknown) => {
-                      const message =
-                        err &&
-                        typeof err === 'object' &&
-                        'response' in err &&
-                        err.response &&
-                        typeof err.response === 'object' &&
-                        'data' in err.response &&
-                        err.response.data &&
-                        typeof err.response.data === 'object' &&
-                        'message' in err.response.data
-                          ? String(
-                              (err.response.data as { message: string })
-                                .message,
-                            )
-                          : 'File is missing from storage. Please upload again.';
-                      toast.error(message);
-                      void queryClient.invalidateQueries({
-                        queryKey: ['documents'],
-                      });
-                      void queryClient.invalidateQueries({
-                        queryKey: ['dashboard'],
-                      });
-                    });
-                }}
-              />
+          <div className="space-y-8">
+            {universityGroups.map((group) => (
+              <section key={group.key} className="space-y-4">
+                <div>
+                  <p className="label-caps">University</p>
+                  <h2 className="font-sans text-lg font-semibold tracking-tight text-foreground">
+                    {group.universityName}
+                  </h2>
+                </div>
+                {renderGrouped(group.docs)}
+              </section>
             ))}
           </div>
         )}

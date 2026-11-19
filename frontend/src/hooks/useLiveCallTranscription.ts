@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   appendLiveTranscriptLine,
   transcribeCallAudio,
 } from '../services/scholaraApi';
+import type { CallSessionItem } from '../types/domain';
 
 type SpeechRecognitionLike = {
   continuous: boolean;
@@ -44,13 +46,24 @@ export function useLiveCallTranscription(
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'speech' | 'whisper' | 'idle'>('idle');
 
+  const queryClient = useQueryClient();
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const uploadingRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
 
+  const applySession = useCallback(
+    (session: CallSessionItem) => {
+      queryClient.setQueryData(['call', session.id], session);
+    },
+    [queryClient],
+  );
+
   const stopAll = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
     recognitionRef.current?.stop();
     recognitionRef.current = null;
     if (recorderRef.current && recorderRef.current.state !== 'inactive') {
@@ -85,9 +98,13 @@ export function useLiveCallTranscription(
           const text = result[0]?.transcript?.trim();
           if (!text) continue;
           if (result.isFinal) {
-            void appendLiveTranscriptLine(callId, text).catch(() => {
-              /* keep listening */
-            });
+            void appendLiveTranscriptLine(callId, text)
+              .then((session) => {
+                if (!cancelled) applySession(session);
+              })
+              .catch(() => {
+                /* keep listening */
+              });
             setInterim('');
           } else {
             interimText += `${text} `;
@@ -130,15 +147,25 @@ export function useLiveCallTranscription(
       : 'audio/webm';
     const recorder = new MediaRecorder(stream, { mimeType: mime });
     recorderRef.current = recorder;
+    abortRef.current = new AbortController();
+    const { signal } = abortRef.current;
     recorder.ondataavailable = async (event) => {
-      if (!event.data.size || uploadingRef.current || !enabledRef.current) {
+      if (
+        !event.data.size ||
+        uploadingRef.current ||
+        !enabledRef.current ||
+        signal.aborted
+      ) {
         return;
       }
       uploadingRef.current = true;
       try {
-        await transcribeCallAudio(callId, event.data);
+        const session = await transcribeCallAudio(callId, event.data, {
+          signal,
+        });
+        if (!cancelled && !signal.aborted) applySession(session);
       } catch {
-        /* keep recording */
+        /* keep recording / aborted */
       } finally {
         uploadingRef.current = false;
       }
@@ -151,7 +178,7 @@ export function useLiveCallTranscription(
       cancelled = true;
       stopAll();
     };
-  }, [enabled, callId, stream, stopAll]);
+  }, [enabled, callId, stream, stopAll, applySession]);
 
   return { listening, interim, error, mode, stopAll };
 }

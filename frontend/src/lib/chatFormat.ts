@@ -344,7 +344,7 @@ function suggestionOverlapsText(label: string, text: string): boolean {
 /** Topics just covered in the assistant reply → suppress matching chips. */
 const ANSWERED_TOPIC_RULES: { answered: RegExp; chip: RegExp }[] = [
   {
-    answered: /###\s*.*documents|missing document|not uploaded|passport|cnic/i,
+    answered: /###\s*.*documents|missing document|not uploaded|passport|civil id|cnic/i,
     chip: /missing doc|document status|check missing|upload doc/i,
   },
   {
@@ -392,7 +392,7 @@ export function stripSuggestionsDirective(content: string): string {
     .trim();
 }
 
-export type ScheduleSessionMode = 'CALL' | 'CHAT' | 'ANY';
+export type ScheduleSessionMode = 'CALL' | 'ANY';
 
 export const SCHEDULE_SESSION_DIRECTIVE_RE =
   /\[\[SCHEDULE_SESSION:(CALL|CHAT|ANY)\]\]/gi;
@@ -402,7 +402,10 @@ export function parseScheduleSession(
 ): ScheduleSessionMode | null {
   const match = /\[\[SCHEDULE_SESSION:(CALL|CHAT|ANY)\]\]/i.exec(content);
   if (!match?.[1]) return null;
-  return match[1].toUpperCase() as ScheduleSessionMode;
+  const raw = match[1].toUpperCase();
+  // Legacy CHAT directives → call booking (messaging is always-on in Messages).
+  if (raw === 'CHAT') return 'CALL';
+  return raw as ScheduleSessionMode;
 }
 
 export function stripScheduleSessionDirective(content: string): string {

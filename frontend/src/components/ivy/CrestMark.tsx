@@ -24,7 +24,7 @@ export function CrestMark({ size = 44 }: { size?: number }) {
         y="28"
         textAnchor="middle"
         className="fill-gold"
-        style={{ font: "600 17px 'Playfair Display', serif" }}
+        style={{ font: "600 17px Lora, Georgia, serif" }}
       >
         S
       </text>

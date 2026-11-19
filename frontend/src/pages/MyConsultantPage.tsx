@@ -2,14 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft,
   CalendarDays,
   Check,
   ChevronDown,
   ChevronUp,
   History,
-  MessageCircle,
-  MessageSquare,
   Mic,
   Phone,
   PhoneOff,
@@ -17,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { BackLink } from '../components/ivy/BackLink';
 import { EmptyState } from '../components/ivy/EmptyState';
 import { PageMotion } from '../components/ivy/PageMotion';
 import { ScreenTitle } from '../components/ivy/ScreenTitle';
@@ -24,6 +22,11 @@ import { TapButton } from '../components/ivy/TapButton';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/cn';
 import { getBackPath, withFrom } from '../lib/navigation';
+import {
+  callRequestsKey,
+  callsKey,
+  dashboardKey,
+} from '../lib/queryKeys';
 import {
   sameTimeConflictMessage,
   type OccupiedScheduleSlot,
@@ -41,44 +44,18 @@ import {
   rejectCallRequest,
   startCall,
 } from '../services/scholaraApi';
-import {
-  approveChatRequest,
-  cancelChatRequest,
-  createChatRequest,
-  endChatSession,
-  fetchChatRequests,
-  fetchOpenChatSession,
-  rejectChatRequest,
-  startChatSession,
-} from '../services/messagingApi';
-import type {
-  CallRequestItem,
-  CallSessionItem,
-  ChatRequestItem,
-} from '../types/domain';
+import type { CallRequestItem, CallSessionItem } from '../types/domain';
 
-type SessionKind = 'CALL' | 'CHAT';
-
-type HistoryEntry =
-  | {
-      key: string;
-      kind: 'CALL';
-      at: string;
-      title: string;
-      subtitle: string;
-      status: string;
-      note?: string | null;
-      call?: CallSessionItem;
-    }
-  | {
-      key: string;
-      kind: 'CHAT';
-      at: string;
-      title: string;
-      subtitle: string;
-      status: string;
-      note?: string | null;
-    };
+type HistoryEntry = {
+  key: string;
+  kind: 'CALL';
+  at: string;
+  title: string;
+  subtitle: string;
+  status: string;
+  note?: string | null;
+  call?: CallSessionItem;
+};
 
 function apiError(err: unknown, fallback: string) {
   return (
@@ -199,26 +176,24 @@ function statusClass(status: string) {
   switch (status) {
     case 'APPROVED':
     case 'LIVE':
-      return 'bg-success/15 text-success';
+      return 'bg-success-soft text-success';
     case 'COMPLETED':
-      return 'bg-secondary text-foreground';
+      return 'bg-success-soft text-success';
     case 'REJECTED':
       return 'bg-destructive-soft text-destructive';
     case 'CANCELLED':
-      return 'bg-secondary text-muted-foreground';
+      return 'bg-neutral-soft text-neutral';
+    case 'PENDING':
+      return 'bg-warning-soft text-warning';
     default:
-      return 'bg-gold-soft text-gold-ink';
+      return 'bg-warning-soft text-warning';
   }
 }
 
 function invalidateSessionQueries(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ['call-requests'] });
-  void queryClient.invalidateQueries({ queryKey: ['chat-requests'] });
   void queryClient.invalidateQueries({ queryKey: ['calls'] });
-  void queryClient.invalidateQueries({ queryKey: ['chat-session-open'] });
   void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-  void queryClient.invalidateQueries({ queryKey: ['consultant-students'] });
-  void queryClient.invalidateQueries({ queryKey: ['chat-messages'] });
 }
 
 function HistoryCallCard({ call }: { call: CallSessionItem }) {
@@ -304,17 +279,11 @@ function HistoryCallCard({ call }: { call: CallSessionItem }) {
 }
 
 function BookSessionCard({
-  kind,
-  onKindChange,
   callBlocked,
-  chatBlocked,
   occupiedSlots,
   readOnly,
 }: {
-  kind: SessionKind;
-  onKindChange: (kind: SessionKind) => void;
   callBlocked: boolean;
-  chatBlocked: boolean;
   occupiedSlots: OccupiedScheduleSlot[];
   readOnly?: boolean;
 }) {
@@ -371,41 +340,18 @@ function BookSessionCard({
     },
   });
 
-  const createChatMutation = useMutation({
-    mutationFn: () => {
-      if (!scheduledIso) throw new Error('Pick a date and time');
-      const conflict = sameTimeConflictMessage(scheduledIso, occupiedSlots);
-      if (conflict) throw new Error(conflict);
-      return createChatRequest(scheduledIso, note.trim() || undefined);
-    },
-    onSuccess: () => {
-      toast.success('Chat request sent to your consultant');
-      setNote('');
-      setSelectedTime('');
-      invalidateSessionQueries(queryClient);
-    },
-    onError: (err) => {
-      const msg = apiError(err, 'Could not schedule chat');
-      toast.error(Array.isArray(msg) ? msg[0] : String(msg));
-    },
-  });
-
-  const pending =
-    kind === 'CALL'
-      ? createCallMutation.isPending
-      : createChatMutation.isPending;
-  const blocked = kind === 'CALL' ? callBlocked : chatBlocked;
+  const pending = createCallMutation.isPending;
   const canSubmit =
     Boolean(scheduledIso) && !pending && !sameTimeConflict;
 
   if (readOnly) {
     return (
       <div className="ivy-card mb-8">
-        <p className="label-caps mb-2">Book a Session</p>
+        <p className="label-caps mb-2">Book a call</p>
         <EmptyState
           icon={CalendarDays}
           title="Booking unavailable"
-          description="Guardians can view upcoming sessions but cannot book new ones."
+          description="You can view upcoming sessions here. Only the student can request new appointments."
           className="p-6"
         />
       </div>
@@ -415,51 +361,18 @@ function BookSessionCard({
   return (
     <div className="ivy-card mb-8 space-y-5">
       <div>
-        <p className="label-caps">Book a Session</p>
+        <p className="label-caps">Book a call</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Request a private 1:1 with your consultant. They approve the time,
-          then open the room when ready.
+          Request a 1:1 audio call with your consultant. They approve the time,
+          then start the live call when ready.
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-1 rounded-xl border border-[#EBE8E0] bg-[#F3F2F0] p-1 shadow-well">
-        <button
-          type="button"
-          onClick={() => onKindChange('CALL')}
-          className={cn(
-            'flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs transition',
-            kind === 'CALL'
-              ? 'btn-chip-active font-semibold'
-              : 'font-medium text-[#525B6B] hover:text-[#0F1E36]',
-          )}
-        >
-          <Phone className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
-          1:1 Audio Call
-        </button>
-        <button
-          type="button"
-          onClick={() => onKindChange('CHAT')}
-          className={cn(
-            'flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs transition',
-            kind === 'CHAT'
-              ? 'btn-chip-active font-semibold'
-              : 'font-medium text-[#525B6B] hover:text-[#0F1E36]',
-          )}
-        >
-          <MessageSquare className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
-          1:1 Live Chat
-        </button>
-      </div>
-
-      {blocked ? (
+      {callBlocked ? (
         <EmptyState
-          icon={kind === 'CALL' ? Phone : MessageSquare}
-          title={
-            kind === 'CALL'
-              ? 'You already have a call scheduled.'
-              : 'You already have a chat scheduled.'
-          }
-          description="Manage it under Upcoming Sessions, or cancel to book a new time."
+          icon={Phone}
+          title="You already have a call scheduled."
+          description="Manage it under Upcoming, or cancel to book a new time."
           className="p-6"
         />
       ) : (
@@ -468,8 +381,7 @@ function BookSessionCard({
           onSubmit={(e) => {
             e.preventDefault();
             if (!canSubmit) return;
-            if (kind === 'CALL') createCallMutation.mutate();
-            else createChatMutation.mutate();
+            createCallMutation.mutate();
           }}
         >
           <div className="rounded-xl border border-[#EBE8E0] bg-[#F3F2F0] p-3 shadow-well">
@@ -477,7 +389,7 @@ function BookSessionCard({
               <p className="text-sm font-semibold text-[#1E2430]">
                 {monthLabel(viewMonth)}
               </p>
-              <span className="rounded-full bg-[#FFFBEB] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#92400E]">
+              <span className="rounded-full bg-gold-soft px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gold-ink">
                 Next 10 days
               </span>
             </div>
@@ -567,11 +479,7 @@ function BookSessionCard({
               value={note}
               onChange={(e) => setNote(e.target.value)}
               rows={2}
-              placeholder={
-                kind === 'CALL'
-                  ? 'What would you like to discuss?'
-                  : 'What would you like to chat about?'
-              }
+              placeholder="What would you like to discuss?"
               className="w-full resize-none rounded-xl border border-[#EBE8E0] bg-[#F3F2F0] px-3 py-2.5 text-sm text-[#1E2430] shadow-well outline-none focus:border-[#C8963E] focus:bg-white"
             />
           </label>
@@ -595,9 +503,7 @@ function BookSessionCard({
                   ? 'Pick a future time'
                   : sameTimeConflict
                     ? 'Pick another time'
-                    : kind === 'CALL'
-                      ? 'Request 1:1 Call'
-                      : 'Request 1:1 Chat'}
+                    : 'Request 1:1 Call'}
           </TapButton>
         </form>
       )}
@@ -622,15 +528,10 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
   const focus = (location.state as { focus?: string } | null)?.focus;
   const bookSectionRef = useRef<HTMLDivElement>(null);
 
-  const [bookKind, setBookKind] = useState<SessionKind>(
-    focus === 'chat' ? 'CHAT' : 'CALL',
-  );
   const [rejectReason, setRejectReason] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (focus === 'chat') setBookKind('CHAT');
-    if (focus === 'call') setBookKind('CALL');
-    if (focus !== 'chat' && focus !== 'call') return;
+    if (focus !== 'call') return;
     const id = window.setTimeout(() => {
       bookSectionRef.current?.scrollIntoView({
         behavior: 'smooth',
@@ -643,26 +544,28 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
   const sessionScopeEnabled =
     Boolean(user) && (isConsultant ? Boolean(resolvedStudentId) : true);
 
+  const studentScope = resolvedStudentId ?? 'self';
+
   const dashboardQuery = useQuery({
-    queryKey: ['dashboard', resolvedStudentId ?? 'self'],
+    queryKey: dashboardKey(studentScope),
     queryFn: () => fetchDashboard(resolvedStudentId),
     enabled: sessionScopeEnabled,
     staleTime: 60_000,
   });
 
   const callsQuery = useQuery({
-    queryKey: ['calls', resolvedStudentId ?? 'self'],
+    queryKey: callsKey(studentScope),
     queryFn: () => fetchCalls(resolvedStudentId),
     enabled: sessionScopeEnabled,
     refetchInterval: (query) => {
       if (query.state.status === 'error') return false;
       const hasOpen = query.state.data?.some((call) => !call.endedAt);
-      return hasOpen ? 4000 : 30_000;
+      return hasOpen ? 5_000 : false;
     },
   });
 
   const callRequestsQuery = useQuery({
-    queryKey: ['call-requests', resolvedStudentId ?? 'self'],
+    queryKey: callRequestsKey(studentScope),
     queryFn: () =>
       fetchCallRequests(
         resolvedStudentId ? { studentId: resolvedStudentId } : undefined,
@@ -672,51 +575,13 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
       const active = query.state.data?.some(
         (r) => r.status === 'PENDING' || r.status === 'APPROVED',
       );
-      return active ? 5000 : 30_000;
-    },
-    enabled: sessionScopeEnabled,
-  });
-
-  const chatRequestsQuery = useQuery({
-    queryKey: ['chat-requests', resolvedStudentId ?? 'self'],
-    queryFn: () =>
-      fetchChatRequests(
-        resolvedStudentId ? { studentId: resolvedStudentId } : undefined,
-      ),
-    refetchInterval: (query) => {
-      if (query.state.status === 'error') return false;
-      const active = query.state.data?.some(
-        (r) => r.status === 'PENDING' || r.status === 'APPROVED',
-      );
-      return active ? 5000 : 30_000;
-    },
-    enabled: sessionScopeEnabled,
-  });
-
-  const openChatQuery = useQuery({
-    queryKey: ['chat-session-open', resolvedStudentId ?? 'self'],
-    queryFn: () => fetchOpenChatSession(resolvedStudentId),
-    refetchInterval: (query) => {
-      if (query.state.status === 'error') return false;
-      return query.state.data ? 4000 : 30_000;
+      return active ? 8_000 : false;
     },
     enabled: sessionScopeEnabled,
   });
 
   const cancelCallMutation = useMutation({
     mutationFn: (id: string) => cancelCallRequest(id),
-    onSuccess: () => {
-      toast.success('Request cancelled');
-      invalidateSessionQueries(queryClient);
-    },
-    onError: (err) => {
-      const msg = apiError(err, 'Could not cancel');
-      toast.error(Array.isArray(msg) ? msg[0] : String(msg));
-    },
-  });
-
-  const cancelChatMutation = useMutation({
-    mutationFn: (id: string) => cancelChatRequest(id),
     onSuccess: () => {
       toast.success('Request cancelled');
       invalidateSessionQueries(queryClient);
@@ -739,34 +604,9 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
     },
   });
 
-  const approveChatMutation = useMutation({
-    mutationFn: (id: string) => approveChatRequest(id),
-    onSuccess: () => {
-      toast.success('Chat request approved');
-      invalidateSessionQueries(queryClient);
-    },
-    onError: (err) => {
-      const msg = apiError(err, 'Could not approve');
-      toast.error(Array.isArray(msg) ? msg[0] : String(msg));
-    },
-  });
-
   const rejectCallMutation = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
       rejectCallRequest(id, reason),
-    onSuccess: () => {
-      toast.success('Request rejected');
-      invalidateSessionQueries(queryClient);
-    },
-    onError: (err) => {
-      const msg = apiError(err, 'Could not reject');
-      toast.error(Array.isArray(msg) ? msg[0] : String(msg));
-    },
-  });
-
-  const rejectChatMutation = useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
-      rejectChatRequest(id, reason),
     onSuccess: () => {
       toast.success('Request rejected');
       invalidateSessionQueries(queryClient);
@@ -790,24 +630,6 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
     },
   });
 
-  const messagesPath =
-    isConsultant && resolvedStudentId
-      ? `/app/students/${resolvedStudentId}/messages`
-      : '/app/messages';
-
-  const startChatMutation = useMutation({
-    mutationFn: (chatRequestId: string) => startChatSession(chatRequestId),
-    onSuccess: () => {
-      toast.success('Encrypted chat started');
-      invalidateSessionQueries(queryClient);
-      navigate(messagesPath, withFrom(location.pathname));
-    },
-    onError: (err) => {
-      const msg = apiError(err, 'Could not start chat');
-      toast.error(Array.isArray(msg) ? msg[0] : String(msg));
-    },
-  });
-
   const endCallMutation = useMutation({
     mutationFn: (callId: string) => endCall(callId),
     onSuccess: () => {
@@ -820,32 +642,13 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
     },
   });
 
-  const endChatMutation = useMutation({
-    mutationFn: (sessionId: string) => endChatSession(sessionId),
-    onSuccess: () => {
-      toast.success('Chat ended — messages cleared');
-      invalidateSessionQueries(queryClient);
-      void queryClient.removeQueries({ queryKey: ['messaging-messages'] });
-      void queryClient.removeQueries({ queryKey: ['messaging-conversation'] });
-    },
-    onError: (err) => {
-      const msg = apiError(err, 'Could not end chat');
-      toast.error(Array.isArray(msg) ? msg[0] : String(msg));
-    },
-  });
-
   const callRequests = callRequestsQuery.data ?? [];
-  const chatRequests = chatRequestsQuery.data ?? [];
   const calls = callsQuery.data ?? [];
 
   const historyEntries = useMemo((): HistoryEntry[] => {
     const callReqs = callRequestsQuery.data ?? [];
-    const chatReqs = chatRequestsQuery.data ?? [];
     const callSessions = callsQuery.data ?? [];
     const pastCalls = callReqs.filter(
-      (r) => r.status !== 'PENDING' && r.status !== 'APPROVED',
-    );
-    const pastChats = chatReqs.filter(
       (r) => r.status !== 'PENDING' && r.status !== 'APPROVED',
     );
     const endedCalls = callSessions.filter((c) => Boolean(c.endedAt));
@@ -873,17 +676,6 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
           call: linked,
         };
       }),
-      ...pastChats.map((r) => ({
-        key: `chat-req-${r.id}`,
-        kind: 'CHAT' as const,
-        at: r.scheduledFor || r.updatedAt,
-        title: formatSchedule(r.scheduledFor),
-        subtitle: isConsultant
-          ? r.studentName ?? 'Student'
-          : r.consultantName ?? 'Consultant',
-        status: r.status,
-        note: r.studentNote ?? r.consultantNote,
-      })),
       ...endedCalls
         .filter((c) => !linkedSessionIds.has(c.id))
         .map((c) => ({
@@ -901,20 +693,15 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
     return entries.sort(
       (a, b) => new Date(b.at).getTime() - new Date(a.at).getTime(),
     );
-  }, [
-    callRequestsQuery.data,
-    chatRequestsQuery.data,
-    callsQuery.data,
-    isConsultant,
-  ]);
+  }, [callRequestsQuery.data, callsQuery.data, isConsultant]);
 
   if (isConsultant && !resolvedStudentId) {
     return (
       <PageMotion>
-        <ScreenTitle eyebrow="Calls" title="Pick a student" />
+        <ScreenTitle eyebrow="Consultation calls" title="Pick a student" />
         <p className="text-sm text-muted-foreground">
-          Open a student dossier, then use Calls — or go back to your assigned
-          list.
+          Open a student dossier, then open Consultation calls — or go back to
+          your assigned list.
         </p>
         <TapButton
           className="btn-primary mt-4 rounded-xl px-4 py-3 text-sm font-semibold"
@@ -940,19 +727,10 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
 
   const consultant = dashboardQuery.data.student.consultant;
   const openCall = calls.find((c) => !c.endedAt) ?? null;
-  const openChatSession = openChatQuery.data ?? null;
-  const canEnterEncryptedChat = Boolean(openChatSession);
   const activeCalls = callRequests.filter(
     (r) => r.status === 'PENDING' || r.status === 'APPROVED',
   );
-  const activeChats = chatRequests.filter(
-    (r) => r.status === 'PENDING' || r.status === 'APPROVED',
-  );
-  const hasUpcoming =
-    activeCalls.length > 0 ||
-    activeChats.length > 0 ||
-    Boolean(openCall) ||
-    Boolean(openChatSession);
+  const hasUpcoming = activeCalls.length > 0 || Boolean(openCall);
 
   function renderCallUpcoming(request: CallRequestItem) {
     const isLive =
@@ -1114,174 +892,23 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
     );
   }
 
-  function renderChatUpcoming(request: ChatRequestItem) {
-    const isLive =
-      Boolean(openChatSession) &&
-      (!request.chatSessionId ||
-        openChatSession?.id === request.chatSessionId);
-    const badge = isLive ? 'LIVE' : request.status;
-    const accent =
-      isLive || request.status === 'APPROVED' ? '#17593E' : '#8A570E';
-
-    return (
-      <article
-        key={`chat-${request.id}`}
-        className="ivy-card border-l-4 !rounded-xl"
-        style={{ borderLeftColor: accent }}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="mb-1 flex items-center gap-2">
-              <MessageSquare className="h-3.5 w-3.5 text-[#17593E]" />
-              <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#17593E]">
-                1:1 Live Chat
-              </p>
-            </div>
-            <p className="font-sans text-base font-semibold text-foreground">
-              {formatSchedule(request.scheduledFor)}
-            </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {isConsultant
-                ? request.studentName ?? 'Student'
-                : request.consultantName ?? 'Consultant'}
-            </p>
-            {request.studentNote ? (
-              <p className="mt-2 text-sm text-muted-foreground">
-                {request.studentNote}
-              </p>
-            ) : null}
-            {request.consultantNote ? (
-              <p className="mt-1 text-sm text-destructive">
-                Consultant: {request.consultantNote}
-              </p>
-            ) : null}
-          </div>
-          <span
-            className={cn(
-              'shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.08em]',
-              statusClass(badge),
-            )}
-          >
-            {badge}
-          </span>
-        </div>
-
-        {!isGuardian && !isConsultant && request.status === 'PENDING' ? (
-          <TapButton
-            className="btn-outline mt-3 flex w-full items-center justify-center rounded-xl text-sm font-semibold"
-            disabled={cancelChatMutation.isPending}
-            onClick={() => cancelChatMutation.mutate(request.id)}
-          >
-            Cancel request
-          </TapButton>
-        ) : null}
-
-        {isConsultant && request.status === 'PENDING' ? (
-          <div className="mt-3 space-y-2">
-            <div className="flex gap-2">
-              <TapButton
-                className="btn-primary flex flex-1 items-center justify-center gap-1 rounded-xl text-sm font-semibold"
-                disabled={approveChatMutation.isPending}
-                onClick={() => approveChatMutation.mutate(request.id)}
-              >
-                <Check className="h-4 w-4" /> Approve
-              </TapButton>
-              <TapButton
-                className="btn-outline flex flex-1 items-center justify-center gap-1 rounded-xl text-sm font-semibold"
-                disabled={rejectChatMutation.isPending}
-                onClick={() =>
-                  rejectChatMutation.mutate({
-                    id: request.id,
-                    reason: rejectReason[request.id],
-                  })
-                }
-              >
-                <X className="h-4 w-4" /> Reject
-              </TapButton>
-            </div>
-            <input
-              value={rejectReason[request.id] ?? ''}
-              onChange={(e) =>
-                setRejectReason((prev) => ({
-                  ...prev,
-                  [request.id]: e.target.value,
-                }))
-              }
-              placeholder="Optional rejection note"
-              className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none"
-            />
-          </div>
-        ) : null}
-
-        {isConsultant && request.status === 'APPROVED' ? (
-          isLive && openChatSession ? (
-            <div className="mt-3 flex gap-2">
-              <TapButton
-                className="btn-primary flex flex-1 items-center justify-center gap-2 rounded-xl text-sm font-semibold"
-                onClick={() =>
-                  navigate(messagesPath, withFrom(location.pathname))
-                }
-              >
-                <MessageCircle className="h-4 w-4" /> Open chat
-              </TapButton>
-              <TapButton
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-destructive text-sm font-semibold text-white"
-                disabled={endChatMutation.isPending}
-                onClick={() => endChatMutation.mutate(openChatSession.id)}
-              >
-                {endChatMutation.isPending ? 'Ending…' : 'End'}
-              </TapButton>
-            </div>
-          ) : (
-            <TapButton
-              className="btn-primary mt-3 flex w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold"
-              disabled={startChatMutation.isPending}
-              onClick={() => startChatMutation.mutate(request.id)}
-            >
-              <MessageCircle className="h-4 w-4" />
-              {startChatMutation.isPending
-                ? 'Starting…'
-                : 'Start encrypted chat'}
-            </TapButton>
-          )
-        ) : null}
-
-        {!isConsultant && request.status === 'APPROVED' ? (
-          <div className="mt-3">
-            <TapButton
-              type="button"
-              disabled={!isLive || !isAtOrAfterSchedule(request.scheduledFor)}
-              onClick={() =>
-                navigate(messagesPath, withFrom(location.pathname))
-              }
-              className={JOIN_ROOM_BTN}
-            >
-              <MessageCircle className="h-4 w-4" />
-              {!isAtOrAfterSchedule(request.scheduledFor)
-                ? `Opens at ${formatOpenAt(request.scheduledFor)}`
-                : isLive
-                  ? 'Join Room'
-                  : 'Waiting for consultant to open room'}
-            </TapButton>
-          </div>
-        ) : null}
-      </article>
-    );
-  }
-
   return (
     <PageMotion className="pb-36">
-      <div className="mb-3 flex items-center gap-2">
-        <TapButton
-          aria-label="Back"
-          className="btn-outline flex h-10 w-10 items-center justify-center rounded-full"
-          onClick={() => navigate(backTo)}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </TapButton>
+      <div className="mb-3 flex items-start gap-2">
+        <BackLink
+          to={backTo}
+          label={
+            backTo === '/app/profile'
+              ? 'Back to Profile'
+              : isConsultant
+                ? 'Back to student'
+                : 'Back'
+          }
+          className="mb-0"
+        />
         <ScreenTitle
-          eyebrow={isConsultant ? 'Student calls' : 'Support'}
-          title={isConsultant ? 'Schedule & calls' : 'My Consultant'}
+          eyebrow={isConsultant ? 'Student' : '1:1 audio'}
+          title="Consultation calls"
         />
       </div>
 
@@ -1300,24 +927,12 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
               </p>
               {!isConsultant ? (
                 <p className="mt-1 text-xs font-normal text-[#8B92A5]">
-                  Book a session below. Encrypted rooms open after your
-                  consultant starts them.
+                  Request a 1:1 audio call below when you need live support.
                 </p>
               ) : null}
             </div>
             <UserRound className="h-5 w-5 text-[#8B92A5]" strokeWidth={1.5} />
           </div>
-          {canEnterEncryptedChat ? (
-            <TapButton
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-[#162B4D] to-[#0D1A30] py-3 text-sm font-semibold text-white shadow-sm"
-              onClick={() =>
-                navigate(messagesPath, withFrom(location.pathname))
-              }
-            >
-              <MessageCircle className="h-4 w-4 text-white" />
-              {isGuardian ? 'View chat' : 'Encrypted chat'}
-            </TapButton>
-          ) : null}
         </div>
       ) : (
         <div className="ivy-card mb-8">
@@ -1330,15 +945,21 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
       )}
 
       <section className="mb-8 space-y-5">
-        <h2 className="font-sans text-lg font-semibold text-[#1E2430]">
-          Upcoming Sessions
-        </h2>
+        <div>
+          <p className="label-caps">Schedule</p>
+          <h2 className="font-sans text-lg font-semibold text-[#1E2430]">
+            Upcoming
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Approved calls, pending requests, and live audio sessions.
+          </p>
+        </div>
 
         {!hasUpcoming ? (
           <EmptyState
             icon={CalendarDays}
-            title="No upcoming sessions scheduled"
-            description="Book a call or chat below when you are ready to meet."
+            title="No upcoming sessions"
+            description="Book a call below when you are ready to meet your consultant."
           />
         ) : (
           <div className="space-y-4">
@@ -1400,50 +1021,6 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
                 </div>
               </article>
             ) : null}
-
-            {activeChats.map(renderChatUpcoming)}
-            {openChatSession &&
-            !activeChats.some(
-              (r) =>
-                r.status === 'APPROVED' &&
-                (!r.chatSessionId ||
-                  r.chatSessionId === openChatSession.id),
-            ) ? (
-              <article className="ivy-card border-l-4 border-l-[#065F46] !rounded-xl">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="mb-1 flex items-center gap-2">
-                      <MessageSquare
-                        className="h-3.5 w-3.5 text-[#065F46]"
-                        strokeWidth={1.5}
-                      />
-                      <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#8B92A5]">
-                        1:1 Live Chat
-                      </p>
-                    </div>
-                    <p className="font-sans text-base font-semibold text-[#1E2430]">
-                      Room is open
-                    </p>
-                  </div>
-                  <span
-                    className={cn(
-                      'rounded-full px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.08em]',
-                      statusClass('LIVE'),
-                    )}
-                  >
-                    LIVE
-                  </span>
-                </div>
-                <TapButton
-                  className={cn(JOIN_ROOM_BTN, 'mt-3')}
-                  onClick={() =>
-                    navigate(messagesPath, withFrom(location.pathname))
-                  }
-                >
-                  <MessageCircle className="h-4 w-4" /> Join Room
-                </TapButton>
-              </article>
-            ) : null}
           </div>
         )}
       </section>
@@ -1451,60 +1028,49 @@ export function MyConsultantPage({ studentId }: { studentId?: string }) {
       {!isConsultant ? (
         <div ref={bookSectionRef}>
           <BookSessionCard
-            kind={bookKind}
-            onKindChange={setBookKind}
             callBlocked={activeCalls.length > 0}
-            chatBlocked={activeChats.length > 0}
-            occupiedSlots={[
-              ...activeCalls.map(
-                (r): OccupiedScheduleSlot => ({
-                  kind: 'CALL',
-                  scheduledFor: r.scheduledFor,
-                }),
-              ),
-              ...activeChats.map(
-                (r): OccupiedScheduleSlot => ({
-                  kind: 'CHAT',
-                  scheduledFor: r.scheduledFor,
-                }),
-              ),
-            ]}
+            occupiedSlots={activeCalls.map(
+              (r): OccupiedScheduleSlot => ({
+                kind: 'CALL',
+                scheduledFor: r.scheduledFor,
+              }),
+            )}
             readOnly={isGuardian}
           />
         </div>
       ) : null}
 
       <section className="mb-8 space-y-5">
-        <h2 className="font-sans text-lg font-semibold text-[#1E2430]">
-          Session History
-        </h2>
+        <div>
+          <p className="label-caps">Archive</p>
+          <h2 className="font-sans text-lg font-semibold text-[#1E2430]">
+            Past
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Previous calls, notes, and transcripts.
+          </p>
+        </div>
         {historyEntries.length === 0 ? (
           <EmptyState
             icon={History}
             title="No past sessions yet"
-            description="Completed calls and chats will appear here."
+            description="Completed calls will appear here."
           />
         ) : (
           <div className="space-y-4">
             {historyEntries.map((entry) =>
-              entry.kind === 'CALL' && entry.call ? (
+              entry.call ? (
                 <HistoryCallCard key={entry.key} call={entry.call} />
               ) : (
                 <article key={entry.key} className="ivy-card">
                   <div className="flex items-start gap-3">
                     <span className="ivy-medallion flex h-11 w-11 shrink-0 items-center justify-center rounded-xl">
-                      {entry.kind === 'CALL' ? (
-                        <Phone className="h-5 w-5" />
-                      ) : (
-                        <MessageSquare className="h-5 w-5" />
-                      )}
+                      <Phone className="h-5 w-5" />
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="label-caps">
-                            {entry.kind === 'CALL' ? 'Audio call' : 'Live chat'}
-                          </p>
+                          <p className="label-caps">Audio call</p>
                           <p className="font-sans text-base font-semibold text-foreground">
                             {entry.title}
                           </p>

@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -13,6 +14,7 @@ import { ConsultantProfile } from '../consultants/consultant-profile.entity';
 import { DirectMessage } from './direct-message.entity';
 
 @Entity('conversations')
+@Index('idx_conversations_consultant_id', ['consultantId'])
 export class Conversation {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

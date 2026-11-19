@@ -43,14 +43,14 @@ describe('chatFormat (mobile table flatten)', () => {
       '| NUST | In progress | 2026-12-01 |',
       '| LUMS | Submitted | 2026-11-20 |',
       '',
-      'Next: upload CNIC.',
+      'Next: upload Civil ID Card.',
     ].join('\n');
 
     const out = normalizeAssistantMarkdown(input);
     assert.equal(out.includes('|'), false);
     assert.match(out, /• \*\*NUST\*\*/);
     assert.match(out, /Status: In progress/);
-    assert.match(out, /Next: upload CNIC/);
+    assert.match(out, /Next: upload Civil ID Card/);
   });
 
   it('drops ascii divider rows', () => {
@@ -156,9 +156,9 @@ describe('chatFormat (colon cards & suggestions)', () => {
 
   it('parses pipe-free :: item lines', () => {
     const item = parseColonItem(
-      '- **Passport Photo** :: Not Uploaded :: Upload a clear photo by Nov 10 to stay on track.',
+      '- **Passport-size Photograph** :: Not Uploaded :: Upload a clear photo by Nov 10 to stay on track.',
     );
-    assert.equal(item?.title, 'Passport Photo');
+    assert.equal(item?.title, 'Passport-size Photograph');
     assert.equal(item?.status, 'Not Uploaded');
     assert.match(item?.note ?? '', /Upload a clear photo/);
     assert.equal(statusEmojiFor('Not Uploaded'), '⚠️');
@@ -221,6 +221,11 @@ describe('chatFormat (colon cards & suggestions)', () => {
       'Pick a slot below.\n\n[[SCHEDULE_SESSION:CALL]]';
     assert.equal(parseScheduleSession(raw), 'CALL');
     assert.equal(parseScheduleSession('[[SCHEDULE_SESSION:ANY]]'), 'ANY');
+    assert.equal(
+      parseScheduleSession('[[SCHEDULE_SESSION:CHAT]]'),
+      'CALL',
+      'legacy CHAT maps to CALL booking',
+    );
     assert.equal(
       stripAssistantDirectives(raw).includes('[[SCHEDULE_SESSION'),
       false,

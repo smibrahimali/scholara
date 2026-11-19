@@ -1,15 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronDown, GraduationCap } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  GraduationCap,
+} from 'lucide-react';
 import { toast } from 'sonner';
+import { BackLink } from '../components/ivy/BackLink';
 import { EmptyState } from '../components/ivy/EmptyState';
 import { PageMotion } from '../components/ivy/PageMotion';
 import { ScreenTitle } from '../components/ivy/ScreenTitle';
 import { TapButton } from '../components/ivy/TapButton';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/cn';
+import { getBackPath, hasNavFrom, withFrom } from '../lib/navigation';
 import { formatDisplayDate } from '../lib/statusMaps';
 import {
   fetchApplication,
@@ -17,6 +25,109 @@ import {
   updateApplicationStep,
 } from '../services/scholaraApi';
 import type { ApplicationItem, ApplicationStep } from '../types/domain';
+
+function UniversityChipPicker({
+  apps,
+  selectedId,
+  onSelect,
+}: {
+  apps: ApplicationItem[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+
+    const updateHints = () => {
+      const { scrollLeft, scrollWidth, clientWidth } = el;
+      setCanScrollLeft(scrollLeft > 4);
+      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 4);
+    };
+
+    updateHints();
+    el.addEventListener('scroll', updateHints, { passive: true });
+    const ro = new ResizeObserver(updateHints);
+    ro.observe(el);
+    window.addEventListener('resize', updateHints);
+
+    return () => {
+      el.removeEventListener('scroll', updateHints);
+      ro.disconnect();
+      window.removeEventListener('resize', updateHints);
+    };
+  }, [apps]);
+
+  const scrollByChips = (direction: 1 | -1) => {
+    scrollerRef.current?.scrollBy({
+      left: direction * 180,
+      behavior: 'smooth',
+    });
+  };
+
+  const activeId = selectedId ?? apps[0]?.id;
+
+  return (
+    <div className="relative -mx-5">
+      {canScrollLeft ? (
+        <>
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-gradient-to-r from-background to-transparent"
+          />
+          <button
+            type="button"
+            aria-label="Show previous universities"
+            onClick={() => scrollByChips(-1)}
+            className="absolute left-1 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-sm transition-transform active:scale-95"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        </>
+      ) : null}
+
+      {canScrollRight ? (
+        <>
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l from-background to-transparent"
+          />
+          <button
+            type="button"
+            aria-label="Show more universities"
+            onClick={() => scrollByChips(1)}
+            className="absolute right-1 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-sm transition-transform active:scale-95"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </>
+      ) : null}
+
+      <div
+        ref={scrollerRef}
+        className="flex items-center gap-2 overflow-x-auto no-scrollbar px-5 py-1"
+      >
+        {apps.map((app) => (
+          <button
+            key={app.id}
+            type="button"
+            onClick={() => onSelect(app.id)}
+            className={cn(
+              'min-h-12 shrink-0 rounded-full px-4 text-xs font-medium uppercase tracking-[0.08em] transition-all duration-200 ease-out active:scale-[0.97]',
+              activeId === app.id ? 'btn-chip-active shadow-sm' : 'btn-chip',
+            )}
+          >
+            {app.university.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function stepState(status: string): 'done' | 'current' | 'future' {
   if (status === 'COMPLETED' || status === 'SKIPPED') return 'done';
@@ -28,11 +139,11 @@ function stepCaption(
   status: string,
   completedAt: string | null | undefined,
 ): string {
-  if (status === 'IN_PROGRESS') return 'In progress';
-  if (status === 'SKIPPED') return 'Skipped';
-  if (completedAt) return formatDisplayDate(completedAt);
-  if (status === 'COMPLETED') return 'Completed';
-  return 'Upcoming';
+  if (status === 'IN_PROGRESS') return '🔄 In progress';
+  if (status === 'SKIPPED') return '⏭️ Skipped';
+  if (completedAt) return `✅ ${formatDisplayDate(completedAt)}`;
+  if (status === 'COMPLETED') return '✅ Completed';
+  return '⏳ Upcoming';
 }
 
 function StepNotesPanel({
@@ -58,7 +169,6 @@ function StepNotesPanel({
       queryClient.setQueryData(['application', applicationId], updated);
       void queryClient.invalidateQueries({ queryKey: ['applications'] });
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      void queryClient.invalidateQueries({ queryKey: ['chat-messages'] });
       toast.success('Notes saved');
     },
     onError: () => toast.error('Could not save notes'),
@@ -135,6 +245,16 @@ function JourneyTimeline({
   const [open, setOpen] = useState<number | null>(
     currentIndex >= 0 ? currentIndex : null,
   );
+  const [showAllSteps, setShowAllSteps] = useState(false);
+  const currentStep = currentIndex >= 0 ? steps[currentIndex] : null;
+  const visibleSteps = showAllSteps
+    ? steps
+    : steps.filter(
+        (s, i) =>
+          s.status === 'IN_PROGRESS' ||
+          i === currentIndex ||
+          (currentIndex < 0 && i === doneCount),
+      );
 
   return (
     <div className="space-y-6">
@@ -143,6 +263,22 @@ function JourneyTimeline({
           eyebrow={application.program.name}
           title={application.university.name}
         />
+        <p className="mb-3 text-sm text-muted-foreground">
+          Status:{' '}
+          <span className="font-semibold text-foreground">
+            {application.status === 'IN_PROGRESS'
+              ? 'In progress'
+              : application.status === 'PENDING'
+                ? 'Pending decision'
+                : application.status === 'ACCEPTED'
+                  ? 'Accepted'
+                  : application.status === 'WAITLISTED'
+                    ? 'Waitlisted'
+                    : application.status === 'REJECTED'
+                      ? 'Rejected'
+                      : application.status}
+          </span>
+        </p>
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">
             {steps.length > 0 && doneCount === steps.length
@@ -157,22 +293,49 @@ function JourneyTimeline({
             style={{ width: `${pct}%` }}
           />
         </div>
+        {currentStep ? (
+          <div className="mt-4 rounded-[1rem] border border-gold/35 bg-gold-soft/50 p-4">
+            <p className="label-caps">Current step</p>
+            <p className="mt-1 font-sans text-base font-semibold text-foreground">
+              {currentStep.label}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {currentStep.notes?.trim() ||
+                (canEditNotes
+                  ? 'Update notes or mark progress from the timeline below.'
+                  : 'Your consultant is guiding this stage of the application.')}
+            </p>
+          </div>
+        ) : null}
         {steps.length > 0 && doneCount === steps.length ? (
           <p className="status-success mt-3 rounded-xl px-3.5 py-2.5 text-center text-xs font-semibold">
-            Journey complete — no outstanding application steps
+            Application progress complete — no outstanding steps
           </p>
         ) : null}
       </div>
 
       <div className="rounded-2xl border border-[#DFD3BC] bg-[#FFFDF9] p-4 shadow-xs">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-foreground">
+            Application progress
+          </p>
+          <button
+            type="button"
+            className="text-xs font-semibold text-gold-ink"
+            onClick={() => setShowAllSteps((v) => !v)}
+          >
+            {showAllSteps ? 'Show current only' : 'Show all 12 steps'}
+          </button>
+        </div>
         <ol className="relative">
-          {steps.map((s, i) => {
+          {(showAllSteps ? steps : visibleSteps).map((s) => {
+            const i = steps.findIndex((step) => step.id === s.id);
             const state = stepState(s.status);
             const isOpen = open === i;
             const isActiveCallout = state === 'current';
             return (
               <li key={s.id} className="relative pl-14">
-                {i < steps.length - 1 ? (
+                {showAllSteps && i < steps.length - 1 ? (
                   <span
                     className={cn(
                       'absolute left-[19px] top-10 h-[calc(100%-1.5rem)] w-px',
@@ -286,9 +449,13 @@ function JourneyTimeline({
 
 export function ApplicationsPage({ studentId }: { studentId?: string }) {
   const { user } = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const canEditNotes = user?.role === 'CONSULTANT';
+  const backFallback = studentId ? `/app/students/${studentId}` : '/app';
+  const showBack = hasNavFrom(location);
+  const backTo = getBackPath(location, backFallback);
 
   const listQuery = useQuery({
     queryKey: ['applications', studentId ?? user?.id],
@@ -312,35 +479,34 @@ export function ApplicationsPage({ studentId }: { studentId?: string }) {
   }, [apps.length]);
 
   if (listQuery.isLoading) {
-    return <p className="text-sm text-muted-foreground">Loading journey…</p>;
+    return (
+      <div className="space-y-3" aria-busy="true" aria-label="Loading applications">
+        <div className="skeleton h-8 w-2/3" />
+        <div className="skeleton h-40 w-full" />
+        <div className="skeleton h-56 w-full" />
+      </div>
+    );
   }
   if (listQuery.error || !listQuery.data) {
     return (
-      <p className="text-sm text-destructive">Could not load applications.</p>
+      <div className="ivy-card text-sm text-destructive">
+        Could not load applications. Check that the API is running, then refresh.
+      </div>
     );
   }
 
   return (
     <PageMotion>
       <div className="space-y-8">
+        {showBack ? (
+          <BackLink to={backTo} className="-mb-4" />
+        ) : null}
         {showPicker ? (
-          <div className="-mx-5 flex items-center gap-2 overflow-x-auto no-scrollbar px-5 py-1">
-            {apps.map((app) => (
-              <button
-                key={app.id}
-                type="button"
-                onClick={() => setSelectedId(app.id)}
-                className={cn(
-                  'min-h-12 shrink-0 rounded-full px-4 text-xs font-medium uppercase tracking-[0.08em] transition-all duration-200 ease-out active:scale-[0.97]',
-                  (selectedId ?? apps[0]?.id) === app.id
-                    ? 'btn-chip-active shadow-sm'
-                    : 'btn-chip',
-                )}
-              >
-                {app.university.name}
-              </button>
-            ))}
-          </div>
+          <UniversityChipPicker
+            apps={apps}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+          />
         ) : null}
 
         {headerNote ? (
@@ -368,6 +534,7 @@ export function ApplicationsPage({ studentId }: { studentId?: string }) {
                 studentId
                   ? `/app/students/${studentId}/applications/${detailQuery.data!.id}`
                   : `/app/applications/${detailQuery.data!.id}`,
+                withFrom(location.pathname),
               )
             }
           />

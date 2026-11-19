@@ -160,16 +160,20 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!user || !callId || !body?.type || body.payload === undefined) {
       return { ok: false, error: 'Invalid signal' };
     }
+    // Room membership is established in `join` (JWT + assertCanJoinLiveCall).
+    // Trust that for high-frequency ICE; re-assert only on offer/answer.
     if (client.data.callId !== callId) {
       return { ok: false, error: 'Join the call before signaling' };
     }
 
-    try {
-      await this.callsService.assertCanJoinLiveCall(user, callId);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Cannot signal on this call';
-      return { ok: false, error: message };
+    if (body.type === 'offer' || body.type === 'answer') {
+      try {
+        await this.callsService.assertCanJoinLiveCall(user, callId);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Cannot signal on this call';
+        return { ok: false, error: message };
+      }
     }
 
     client.to(this.room(callId)).emit('signal', {

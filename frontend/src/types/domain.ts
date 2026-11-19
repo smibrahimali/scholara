@@ -17,6 +17,39 @@ export type ApplicationStepStatus =
   | 'COMPLETED'
   | 'SKIPPED';
 
+export type DocumentScope = 'GENERAL' | 'UNIVERSITY';
+
+export type PaymentStatus = 'PAID' | 'UPCOMING';
+
+export type PaymentCategory =
+  | 'CONSULTANT'
+  | 'UNIVERSITY'
+  | 'APPLICATION'
+  | 'DOCUMENT'
+  | 'OTHER';
+
+export interface PaymentItem {
+  id: string;
+  title: string;
+  description: string | null;
+  category: PaymentCategory | string;
+  status: PaymentStatus;
+  amount: number;
+  currency: string;
+  occurredOn: string;
+  payeeLabel: string | null;
+  applicationId: string | null;
+}
+
+export interface PaymentsSummary {
+  currency: string;
+  paidTotal: number;
+  dueTotal: number;
+  grandTotal: number;
+  upcoming: PaymentItem[];
+  history: PaymentItem[];
+}
+
 export interface DocumentItem {
   id: string;
   title: string;
@@ -25,6 +58,11 @@ export interface DocumentItem {
   rejectionReason: string | null;
   storagePath?: string | null;
   hasFile?: boolean;
+  /** GENERAL = shared student docs; UNIVERSITY = tied to one application. */
+  scope?: DocumentScope;
+  applicationId?: string | null;
+  universityId?: string | null;
+  universityName?: string | null;
   updatedAt: string;
   reviews?: Array<{
     id: string;
@@ -44,24 +82,33 @@ export interface ApplicationStep {
   completedAt: string | null;
 }
 
+export type EmailDirection = 'TO_STUDENT';
+
 export interface UniversityEmail {
   id: string;
+  direction?: EmailDirection;
   subject: string;
   sender: string;
   sentAt: string;
   body: string;
+  studentReply?: string | null;
+  repliedAt?: string | null;
 }
 
 export interface EmailLogItem {
   id: string;
+  direction: EmailDirection;
   subject: string;
   sender: string;
   sentAt: string;
   body: string;
+  studentReply: string | null;
+  repliedAt: string | null;
   applicationId: string;
   universityName: string;
   programName: string;
   applicationStatus: ApplicationStatus;
+  consultantName: string | null;
 }
 
 export interface ApplicationItem {
@@ -91,7 +138,9 @@ export interface DashboardData {
     email: string;
     phone?: string;
     targetProgram?: string;
+    preferredIntake?: string | null;
     consultant: { id: string; fullName: string; title?: string } | null;
+    guardian?: { fullName: string; email: string } | null;
   };
   counts: {
     pendingDocuments: number;

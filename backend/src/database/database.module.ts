@@ -21,6 +21,7 @@ import { Conversation } from '../messaging/conversation.entity';
 import { DirectMessage } from '../messaging/direct-message.entity';
 import { ChatSession } from '../messaging/chat-session.entity';
 import { ChatRequest } from '../messaging/chat-request.entity';
+import { StudentPayment } from '../payments/student-payment.entity';
 import { postgresSslOption } from './postgres-ssl';
 
 export const entities = [
@@ -44,6 +45,7 @@ export const entities = [
   DirectMessage,
   ChatSession,
   ChatRequest,
+  StudentPayment,
 ];
 
 @Module({

@@ -116,7 +116,10 @@ describe('ChatService Groq ordering (P1-3)', () => {
     groq.chatCompletion.mockResolvedValue('The decision date is not recorded.');
     chatRepo.save
       .mockResolvedValueOnce({ role: 'user' })
-      .mockResolvedValueOnce({ role: 'assistant', content: 'The decision date is not recorded.' });
+      .mockResolvedValueOnce({
+        role: 'assistant',
+        content: 'The decision date is not recorded.',
+      });
 
     await service.sendMessage(student, {
       content: 'When was my Khalifa University application accepted?',

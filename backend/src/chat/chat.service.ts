@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { AccessService } from '../common/access.service';
 import { ApplicationStepStatus, UserRole } from '../common/enums';
 import { JwtPayload } from '../auth/jwt-payload';
@@ -15,7 +15,8 @@ import { SendChatMessageDto } from './dto/send-chat-message.dto';
 const HISTORY_LIMIT = 60;
 /** Keep model context aligned with UI history window. */
 const CONTEXT_HISTORY_LIMIT = 60;
-const STUDENT_CONTEXT_TTL_MS = 10_000;
+/** Consecutive chat turns reuse dossier context without reloading every turn. */
+const STUDENT_CONTEXT_TTL_MS = 60_000;
 
 @Injectable()
 export class ChatService {
@@ -241,7 +242,6 @@ export class ChatService {
     return `Your ${document.title} was ${action} on ${formatDate(date)}.`;
   }
 
-
   private async buildSystemPrompt(
     user: JwtPayload,
     requestedStudentId?: string,
@@ -269,7 +269,7 @@ export class ChatService {
       '- Section headers MUST be alone on their own line (ALWAYS place a newline \\n before every ### header so it never attaches to a paragraph or item): ### 📄 Documents , ### 🎓 Applications , ### 📅 Deadlines , ### 📞 Calls & Notes , ### 💬 Messages , ### 📧 Emails',
       '- Each item MUST be alone on its own line, pipe-free, exactly:',
       '  - **Item or University Name** :: Status :: Short 1-line action or note',
-      '  Example: - **Passport Photo** :: Not Uploaded :: Upload a clear photo by Nov 10 to stay on track.',
+      '  Example: - **Passport-size Photograph** :: Not Uploaded :: Upload a clear photo by Nov 10 to stay on track.',
       '- ALWAYS place a newline (\\n) before every "- **" item line. NEVER chain multiple "- **" items on the same line. NEVER put two items on one paragraph.',
       '- Optional at the very end of helpful replies (one line): [[SUGGESTIONS:Label One|Label Two]] — DYNAMIC next-step chips only (never copy static examples).',
       '  Suggestion rules (strict): NEVER suggest a topic you just answered in this turn. NEVER suggest anything the user asked about in the last 2 turns (including near-paraphrases). After missing docs → prefer "Schedule 1:1 Call" or "Check application progress" — never "Check missing documents". After deadlines → "Open Documents" or "Review applications". After applications → "Schedule 1:1 Call" or "Check missing documents" only if docs are still incomplete. After greeting/off-topic/nonsense → admissions chips only. Max 2 short labels. Omit [[SUGGESTIONS:...]] entirely when no fresh next step exists.',
@@ -404,40 +404,45 @@ export class ChatService {
     const [documents, applications] = await Promise.all([
       this.documentsRepo.find({
         where: { studentId },
+        relations: { application: { university: true } },
         order: { updatedAt: 'DESC' },
         take: 20,
-        select: [
-          'id',
-          'title',
-          'documentType',
-          'status',
-          'rejectionReason',
-          'uploadedAt',
-          'lastReviewedAt',
-          'verifiedAt',
-          'rejectedAt',
-          'updatedAt',
-        ],
       }),
+      // Avoid joining steps × statusHistory in one find (cartesian product).
       this.applicationsRepo.find({
         where: { studentId },
         relations: {
           university: true,
           program: true,
           steps: true,
-          statusHistory: true,
         },
         order: { createdAt: 'ASC' },
-        take: 50,
+        take: 20,
       }),
     ]);
 
-    const docLines = documents.map(
-      (d) =>
-        `- ${d.title} (${d.documentType}): ${humanizeEnum(d.status)}${
-          d.rejectionReason ? ` — ${d.rejectionReason}` : ''
-        }`,
-    );
+    const historyByApp = new Map<string, ApplicationStatusHistory[]>();
+    if (applications.length > 0) {
+      const histories = await this.statusHistoryRepo.find({
+        where: { applicationId: In(applications.map((app) => app.id)) },
+        order: { changedAt: 'ASC' },
+        take: 80,
+      });
+      for (const entry of histories) {
+        const list = historyByApp.get(entry.applicationId) ?? [];
+        list.push(entry);
+        historyByApp.set(entry.applicationId, list);
+      }
+    }
+
+    const docLines = documents.map((d) => {
+      const scope = d.applicationId
+        ? `university:${d.application?.university?.name ?? 'Unknown'}`
+        : 'general';
+      return `- [${scope}] ${d.title} (${d.documentType}): ${humanizeEnum(d.status)}${
+        d.rejectionReason ? ` — ${d.rejectionReason}` : ''
+      }`;
+    });
 
     const documentDateLines = documents.map((document) => {
       const dates = [
@@ -485,8 +490,7 @@ export class ChatService {
             }`,
         )
         .join(' | ');
-      const statusHistory = [...(app.statusHistory ?? [])]
-        .sort((a, b) => a.changedAt.getTime() - b.changedAt.getTime())
+      const statusHistory = (historyByApp.get(app.id) ?? [])
         .map(
           (entry) =>
             `${humanizeEnum(entry.toStatus)} on ${formatDate(entry.changedAt)}${entry.reason ? ` (${entry.reason})` : ''}`,
@@ -503,7 +507,9 @@ export class ChatService {
       }${app.waitlistPosition ? `, waitlist position ${app.waitlistPosition}` : ''}${app.decisionAt ? `, decision recorded ${formatDate(app.decisionAt)}` : ''}${
         app.feePaidAt ? `, fee paid ${formatDate(app.feePaidAt)}` : ''
       }${app.enrollmentConfirmedAt ? `, enrollment confirmed ${formatDate(app.enrollmentConfirmedAt)}` : ''}${
-        currentStep ? `, current step ${currentStep.stepNumber}/12 (${currentStep.label})` : ''
+        currentStep
+          ? `, current step ${currentStep.stepNumber}/12 (${currentStep.label})`
+          : ''
       }${statusHistory ? `, status history=${statusHistory}` : ''}${
         app.decisionNotes ? `, notes=${app.decisionNotes}` : ''
       }${stepNotes ? `, step history=${stepNotes}` : ''}`;

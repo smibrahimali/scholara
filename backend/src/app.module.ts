@@ -15,6 +15,7 @@ import { ConsultantsModule } from './consultants/consultants.module';
 import { ChatModule } from './chat/chat.module';
 import { CallsModule } from './calls/calls.module';
 import { MessagingModule } from './messaging/messaging.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { MessagingModule } from './messaging/messaging.module';
     ChatModule,
     CallsModule,
     MessagingModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

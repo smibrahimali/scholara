@@ -1,13 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  MessageSquare,
-  Phone,
-  X,
-} from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { TapButton } from '../ivy/TapButton';
 import { cn } from '../../lib/cn';
 import type { ScheduleSessionMode } from '../../lib/chatFormat';
@@ -15,18 +8,14 @@ import {
   sameTimeConflictMessage,
   type OccupiedScheduleSlot,
 } from '../../lib/scheduleConflicts';
+import { callRequestsKey } from '../../lib/queryKeys';
 import { createCallRequest, fetchCallRequests } from '../../services/scholaraApi';
-import {
-  createChatRequest,
-  fetchChatRequests,
-} from '../../services/messagingApi';
 
 const WEEKDAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
 const BOOKING_WINDOW_DAYS = 10;
 
-type SessionKind = 'CALL' | 'CHAT';
+type SessionKind = 'CALL';
 type WizardStep =
-  | 'kind'
   | 'date'
   | 'dateConfirm'
   | 'time'
@@ -253,14 +242,10 @@ function clampMinute(value: number) {
   return Math.min(59, Math.max(0, Math.trunc(value)));
 }
 
-function stepPrompt(step: WizardStep, kind: SessionKind | null) {
-  const label =
-    kind === 'CALL' ? 'call' : kind === 'CHAT' ? 'chat' : 'session';
+function stepPrompt(step: WizardStep) {
   switch (step) {
-    case 'kind':
-      return 'Would you like a 1:1 audio call or live chat?';
     case 'date':
-      return `Pick a date for your ${label}.`;
+      return 'Pick a date for your 1:1 audio call.';
     case 'dateConfirm':
       return 'Confirm this date?';
     case 'time':
@@ -268,7 +253,7 @@ function stepPrompt(step: WizardStep, kind: SessionKind | null) {
     case 'timeConfirm':
       return 'Confirm this time?';
     case 'confirm':
-      return `Ready to request this ${label}?`;
+      return 'Ready to request this call?';
     default:
       return '';
   }
@@ -276,7 +261,7 @@ function stepPrompt(step: WizardStep, kind: SessionKind | null) {
 
 export type ScheduleWizardStatus = {
   incomplete: boolean;
-  kind: SessionKind | null;
+  kind: 'CALL' | null;
   /** True when the user cancelled — parent should not remount this wizard. */
   dismissed?: boolean;
 };
@@ -297,17 +282,15 @@ export function SessionSchedulerCard({
   /** Recent user chat text for date/time hints (never auto-skips confirm). */
   dateHintText?: string;
 }) {
+  // Demo scheduler is call-first; mode is retained for directive compatibility.
+  void mode;
   const queryClient = useQueryClient();
   const callRequestsQuery = useQuery({
-    queryKey: ['call-requests'],
+    queryKey: callRequestsKey('self'),
     queryFn: () => fetchCallRequests(),
   });
-  const chatRequestsQuery = useQuery({
-    queryKey: ['chat-requests'],
-    queryFn: () => fetchChatRequests(),
-  });
   const occupiedSlots = useMemo((): OccupiedScheduleSlot[] => {
-    const calls = (callRequestsQuery.data ?? [])
+    return (callRequestsQuery.data ?? [])
       .filter((r) => r.status === 'PENDING' || r.status === 'APPROVED')
       .map(
         (r): OccupiedScheduleSlot => ({
@@ -315,16 +298,7 @@ export function SessionSchedulerCard({
           scheduledFor: r.scheduledFor,
         }),
       );
-    const chats = (chatRequestsQuery.data ?? [])
-      .filter((r) => r.status === 'PENDING' || r.status === 'APPROVED')
-      .map(
-        (r): OccupiedScheduleSlot => ({
-          kind: 'CHAT',
-          scheduledFor: r.scheduledFor,
-        }),
-      );
-    return [...calls, ...chats];
-  }, [callRequestsQuery.data, chatRequestsQuery.data]);
+  }, [callRequestsQuery.data]);
   const [today, setToday] = useState(() => startOfDay(new Date()));
   useEffect(() => {
     const tick = () => {
@@ -340,12 +314,8 @@ export function SessionSchedulerCard({
     [today],
   );
 
-  const initialKind: SessionKind | null =
-    mode === 'CALL' ? 'CALL' : mode === 'CHAT' ? 'CHAT' : null;
-  const [kind, setKind] = useState<SessionKind | null>(initialKind);
-  const [step, setStep] = useState<WizardStep>(
-    initialKind ? 'date' : 'kind',
-  );
+  const kind: SessionKind = 'CALL';
+  const [step, setStep] = useState<WizardStep>('date');
   const [viewMonth, setViewMonth] = useState(
     () => new Date(today.getFullYear(), today.getMonth(), 1),
   );
@@ -371,7 +341,6 @@ export function SessionSchedulerCard({
 
   // Chat → select values only; never skip Confirm steps.
   useEffect(() => {
-    if (!kind) return;
     const hint = dateHintText.trim();
     if (!hint) return;
 
@@ -421,7 +390,7 @@ export function SessionSchedulerCard({
       setInlineError(null);
       if (step === 'time') setStep('timeConfirm');
     }
-  }, [dateHintText, kind, step, today, maxDate]);
+  }, [dateHintText, step, today, maxDate]);
 
   function handleCancel() {
     onStatusChange?.({ incomplete: false, kind, dismissed: true });
@@ -510,23 +479,16 @@ export function SessionSchedulerCard({
   );
 
   const hasOpenCall = occupiedSlots.some((s) => s.kind === 'CALL');
-  const hasOpenChat = occupiedSlots.some((s) => s.kind === 'CHAT');
-  const kindBlocked =
-    kind === 'CALL' ? hasOpenCall : kind === 'CHAT' ? hasOpenChat : false;
+  const kindBlocked = hasOpenCall;
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      if (!kind || !selectedDate || !scheduledWhen) {
+      if (!selectedDate || !scheduledWhen) {
         throw new Error('Pick a date and time');
       }
-      if (kind === 'CALL' && hasOpenCall) {
+      if (hasOpenCall) {
         throw new Error(
           'You already have a pending or approved call request. Cancel it under Upcoming Sessions before scheduling another.',
-        );
-      }
-      if (kind === 'CHAT' && hasOpenChat) {
-        throw new Error(
-          'You already have a pending or approved chat request. Cancel it under Upcoming Sessions before scheduling another.',
         );
       }
       const day = startOfDay(selectedDate);
@@ -542,11 +504,7 @@ export function SessionSchedulerCard({
       const conflict = sameTimeConflictMessage(scheduledWhen, occupiedSlots);
       if (conflict) throw new Error(conflict);
       const scheduledFor = scheduledWhen.toISOString();
-      if (kind === 'CALL') {
-        await createCallRequest(scheduledFor);
-      } else {
-        await createChatRequest(scheduledFor);
-      }
+      await createCallRequest(scheduledFor);
       return { kind, when: scheduledWhen };
     },
     onSuccess: (data) => {
@@ -554,16 +512,12 @@ export function SessionSchedulerCard({
       setReceipt(data);
       setStep('done');
       void queryClient.invalidateQueries({ queryKey: ['call-requests'] });
-      void queryClient.invalidateQueries({ queryKey: ['chat-requests'] });
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      void queryClient.invalidateQueries({ queryKey: ['consultant-students'] });
-      void queryClient.invalidateQueries({ queryKey: ['chat-messages'] });
     },
     onError: (err) => {
       setInlineError(apiError(err, 'Could not send request'));
       // Refresh open slots so a server-side conflict shows immediately.
       void queryClient.invalidateQueries({ queryKey: ['call-requests'] });
-      void queryClient.invalidateQueries({ queryKey: ['chat-requests'] });
     },
   });
 
@@ -571,13 +525,13 @@ export function SessionSchedulerCard({
     return (
       <div className="rounded-2xl border border-[#EBE8E0]/80 bg-white p-3.5 text-xs leading-relaxed text-[#8B92A5] shadow-elev1">
         {roleNote ??
-          'Only students can book 1:1 call or chat sessions from this assistant.'}
+          'Only students can book 1:1 audio calls from this assistant. Use Messages for everyday chat with your consultant.'}
       </div>
     );
   }
 
-  if (kindBlocked && kind) {
-    const label = kind === 'CALL' ? 'call' : 'chat';
+  if (kindBlocked) {
+    const label = 'call';
     return (
       <div className="space-y-3 rounded-2xl border border-[#EBE8E0]/80 bg-white p-3.5 shadow-elev1">
         <p className="text-[13px] font-semibold leading-snug text-[#0F1E36]">
@@ -602,7 +556,7 @@ export function SessionSchedulerCard({
 
   if (receipt || step === 'done') {
     const data = receipt;
-    const label = data?.kind === 'CALL' ? 'Call' : 'Chat';
+    const label = 'Call';
     return (
       <div className="space-y-1 rounded-2xl border border-[#EBE8E0]/80 bg-white p-3.5 shadow-elev1">
         <p className="text-[13px] font-semibold leading-snug text-[#0F1E36]">
@@ -625,7 +579,7 @@ export function SessionSchedulerCard({
             Schedule wizard
           </p>
           <p className="mt-0.5 text-[13px] font-semibold leading-snug text-[#0F1E36]">
-            {stepPrompt(step, kind)}
+            {stepPrompt(step)}
           </p>
         </div>
         {onCancel ? (
@@ -639,35 +593,6 @@ export function SessionSchedulerCard({
           </TapButton>
         ) : null}
       </div>
-
-      {step === 'kind' ? (
-        <div className="grid grid-cols-2 gap-2">
-          <TapButton
-            type="button"
-            onClick={() => {
-              setKind('CALL');
-              setStep('date');
-              setInlineError(null);
-            }}
-            className="btn-chip flex h-11 items-center justify-center gap-1.5 rounded-xl text-xs font-semibold"
-          >
-            <Phone className="h-3.5 w-3.5 shrink-0" />
-            Audio Call
-          </TapButton>
-          <TapButton
-            type="button"
-            onClick={() => {
-              setKind('CHAT');
-              setStep('date');
-              setInlineError(null);
-            }}
-            className="btn-chip flex h-11 items-center justify-center gap-1.5 rounded-xl text-xs font-semibold"
-          >
-            <MessageSquare className="h-3.5 w-3.5 shrink-0" />
-            Live Chat
-          </TapButton>
-        </div>
-      ) : null}
 
       {step === 'date' || step === 'dateConfirm' ? (
         <>
@@ -796,18 +721,6 @@ export function SessionSchedulerCard({
             </p>
           )}
 
-          {!initialKind && step === 'date' ? (
-            <TapButton
-              type="button"
-              onClick={() => {
-                setKind(null);
-                setStep('kind');
-              }}
-              className="btn-chip flex h-9 w-full items-center justify-center rounded-xl text-xs font-medium"
-            >
-              Back
-            </TapButton>
-          ) : null}
         </>
       ) : null}
 
@@ -978,14 +891,14 @@ export function SessionSchedulerCard({
         </>
       ) : null}
 
-      {step === 'confirm' && selectedDate && kind && scheduledWhen ? (
+      {step === 'confirm' && selectedDate && scheduledWhen ? (
         <>
           <div className="rounded-xl border border-[#EBE8E0] bg-[#F3F2F0] p-3 shadow-well">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8A7F6C]">
               Request summary
             </p>
             <p className="mt-1.5 text-sm font-semibold text-[#0F1E36]">
-              {kind === 'CALL' ? '1:1 Audio Call' : '1:1 Live Chat'}
+              1:1 Audio Call
             </p>
             <p className="mt-1 text-xs leading-relaxed text-[#525B6B]">
               {formatConfirmDate(selectedDate)} ·{' '}

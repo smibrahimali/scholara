@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -10,6 +11,10 @@ import { User } from '../users/user.entity';
 import { Conversation } from './conversation.entity';
 
 @Entity('direct_messages')
+@Index('idx_direct_messages_conversation_created', [
+  'conversationId',
+  'createdAt',
+])
 export class DirectMessage {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -23,7 +28,7 @@ export class DirectMessage {
   @JoinColumn({ name: 'conversation_id' })
   conversation!: Conversation;
 
-  /** Ephemeral encrypted session — wiped when the session ends. */
+  /** Legacy session link (nullable). Always-on chat stores null. */
   @Column({ name: 'chat_session_id', type: 'uuid', nullable: true })
   chatSessionId!: string | null;
 

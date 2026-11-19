@@ -22,7 +22,12 @@ export class ApplicationStatusHistory {
   @JoinColumn({ name: 'application_id' })
   application!: Application;
 
-  @Column({ name: 'from_status', type: 'enum', enum: ApplicationStatus, nullable: true })
+  @Column({
+    name: 'from_status',
+    type: 'enum',
+    enum: ApplicationStatus,
+    nullable: true,
+  })
   fromStatus!: ApplicationStatus | null;
 
   @Column({ name: 'to_status', type: 'enum', enum: ApplicationStatus })

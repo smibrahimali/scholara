@@ -1,20 +1,21 @@
-import { motion } from 'framer-motion';
 import { cn } from '../../lib/cn';
+import { semanticSurface } from '../../lib/semanticStatus';
 import type { DocumentStatus } from '../../types/domain';
 
 export type DocStatus = 'verified' | 'review' | 'rejected' | 'pending';
 
 const badgeStyles: Record<DocStatus, string> = {
-  verified: 'bg-[#ECFDF5] text-[#065F46]',
-  review: 'bg-[#FFFBEB] text-[#92400E]',
-  rejected: 'bg-[#FEF2F2] text-[#991B1B]',
-  pending: 'bg-[#FFFBEB] text-[#92400E]',
+  verified: semanticSurface.success,
+  review: semanticSurface.warning,
+  rejected: semanticSurface.danger,
+  pending: semanticSurface.neutral,
 };
 
+/** Single consistent document status vocabulary across the app. */
 const badgeLabel: Record<DocStatus, string> = {
-  verified: '✓ Verified',
-  review: '◷ Under Review',
-  rejected: '✕ Rejected',
+  verified: 'Approved',
+  review: 'Waiting for review',
+  rejected: 'Needs re-upload',
   pending: 'Not uploaded',
 };
 
@@ -35,40 +36,12 @@ export function StatusBadge({ status }: { status: DocStatus }) {
   return (
     <span
       className={cn(
-        'relative inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium',
+        'relative inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium',
         badgeStyles[status],
       )}
+      role="status"
     >
       {badgeLabel[status]}
-      {status === 'verified' ? <Confetti /> : null}
-    </span>
-  );
-}
-
-function Confetti() {
-  const bits = Array.from({ length: 8 });
-  return (
-    <span className="pointer-events-none absolute inset-0">
-      {bits.map((_, i) => {
-        const angle = (i / bits.length) * Math.PI * 2;
-        return (
-          <motion.span
-            key={i}
-            className={cn(
-              'absolute left-1/2 top-1/2 h-1.5 w-1.5 rounded-full',
-              i % 2 ? 'bg-gold' : 'bg-success',
-            )}
-            initial={{ x: 0, y: 0, opacity: 1, scale: 1 }}
-            animate={{
-              x: Math.cos(angle) * 28,
-              y: Math.sin(angle) * 18,
-              opacity: 0,
-              scale: 0.4,
-            }}
-            transition={{ duration: 0.9, delay: 0.3, ease: 'easeOut' }}
-          />
-        );
-      })}
     </span>
   );
 }

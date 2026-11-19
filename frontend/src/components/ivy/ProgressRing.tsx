@@ -15,19 +15,19 @@ export function ProgressRing({
   const c = 2 * Math.PI * r;
   const textClass = light ? 'text-primary-foreground' : 'text-foreground';
   const subClass = light
-    ? 'text-primary-foreground/80'
+    ? 'text-primary-foreground/70'
     : 'text-muted-foreground';
 
   return (
-    <div className="relative h-24 w-24 shrink-0">
+    <div className="relative h-[5.5rem] w-[5.5rem] shrink-0 sm:h-24 sm:w-24">
       <svg viewBox="0 0 80 80" className="h-full w-full -rotate-90">
         <circle
           cx="40"
           cy="40"
           r={r}
           fill="none"
-          stroke="color-mix(in oklab, var(--primary-foreground) 20%, transparent)"
-          strokeWidth="6"
+          stroke="color-mix(in oklab, var(--primary-foreground) 18%, transparent)"
+          strokeWidth="5.5"
         />
         <motion.circle
           cx="40"
@@ -35,7 +35,7 @@ export function ProgressRing({
           r={r}
           fill="none"
           className="stroke-gold"
-          strokeWidth="6"
+          strokeWidth="5.5"
           strokeLinecap="round"
           strokeDasharray={c}
           initial={{ strokeDashoffset: c }}
@@ -47,11 +47,15 @@ export function ProgressRing({
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className={`font-serif text-2xl font-semibold ${textClass}`}>
+        <span className={`font-serif text-[1.35rem] font-semibold leading-none ${textClass}`}>
           {done}
-          <span className="text-sm text-primary-foreground/80">/{safeTotal}</span>
+          <span className="text-xs font-medium text-primary-foreground/65">
+            /{safeTotal}
+          </span>
         </span>
-        <span className={`text-[10px] font-bold uppercase tracking-widest ${subClass}`}>
+        <span
+          className={`mt-1 text-[0.625rem] font-semibold uppercase tracking-[0.1em] ${subClass}`}
+        >
           steps
         </span>
       </div>

@@ -57,28 +57,28 @@ export function LoginPage() {
         <div aria-hidden className="ivy-ambient pointer-events-none absolute inset-0" />
         <div
           aria-hidden
-          className="pointer-events-none absolute -right-10 top-8 opacity-[0.08]"
+          className="pointer-events-none absolute -right-10 top-8 opacity-[0.045]"
         >
-          <CrestMark size={220} />
+          <CrestMark size={200} />
         </div>
 
         <div className="no-scrollbar relative z-10 flex flex-1 flex-col justify-center overflow-y-auto px-5 py-10">
           <div className="mb-6 flex items-center gap-3">
             <CrestMark size={44} />
             <div>
-              <p className="font-serif text-2xl font-semibold leading-none text-foreground">
+              <p className="editorial-title text-2xl text-foreground">
                 Scholara
               </p>
-              <p className="label-caps mt-1 tracking-[0.25em]">
+              <p className="label-caps mt-1.5">
                 Est. Admissions Office
               </p>
             </div>
           </div>
 
-          <p className="font-mono text-[10px] font-semibold tracking-[0.22em] text-gold-ink">
+          <p className="font-mono text-[0.625rem] font-semibold tracking-[0.14em] text-gold-ink">
             ADMISSIONS PORTAL · SECURE ACCESS
           </p>
-          <p className="mt-3 text-sm font-semibold text-muted-foreground">
+          <p className="mt-3 text-sm font-medium leading-relaxed text-muted-foreground">
             Demo login for Student, Guardian, and Consultant roles.
           </p>
           <HeraldicDivider className="mt-4" />

@@ -256,11 +256,19 @@ export class ConsultantsService {
     await this.access.resolveReadableStudentId(user, studentId);
     return this.callNotesRepo
       .createQueryBuilder('note')
-      .innerJoinAndSelect('note.callSession', 'session')
+      .innerJoin('note.callSession', 'session')
+      .addSelect([
+        'session.id',
+        'session.studentId',
+        'session.consultantId',
+        'session.startedAt',
+        'session.endedAt',
+      ])
       .leftJoinAndSelect('session.consultant', 'consultant')
       .leftJoinAndSelect('consultant.user', 'consultantUser')
       .where('session.student_id = :studentId', { studentId })
       .orderBy('note.created_at', 'DESC')
+      .take(40)
       .getMany();
   }
 }

@@ -24,8 +24,10 @@ export function LiveCallPage() {
     queryKey: ['call', callId],
     queryFn: () => fetchCall(callId!),
     enabled: Boolean(callId),
+    // Local speech posts update the cache; slow poll only syncs the peer + endedAt.
+    staleTime: 8_000,
     refetchInterval: (query) =>
-      query.state.data?.endedAt ? false : 1500,
+      query.state.data?.endedAt ? false : 10_000,
   });
 
   const call = callQuery.data;
@@ -77,7 +79,6 @@ export function LiveCallPage() {
       void queryClient.invalidateQueries({ queryKey: ['call', callId] });
       void queryClient.invalidateQueries({ queryKey: ['calls'] });
       void queryClient.invalidateQueries({ queryKey: ['call-requests'] });
-      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       navigate(historyPath);
     },
     onError: (err: unknown) => {
@@ -159,10 +160,10 @@ export function LiveCallPage() {
               <span
                 className={`flex h-12 w-12 items-center justify-center rounded-full ${
                   rtcStatus === 'connected'
-                    ? 'bg-success/15 text-success'
+                    ? 'bg-success-soft text-success'
                     : listening
-                      ? 'bg-gold/20 text-gold-ink'
-                      : 'bg-secondary text-muted-foreground'
+                      ? 'bg-info-soft text-info'
+                      : 'bg-neutral-soft text-neutral'
                 }`}
               >
                 {rtcStatus === 'connected' ? (
@@ -226,7 +227,7 @@ export function LiveCallPage() {
             ) : null}
           </div>
 
-          <h2 className="mb-2 font-serif text-xl font-semibold">
+          <h2 className="editorial-title mb-2 text-xl">
             Live transcript
           </h2>
           <div className="min-h-48 rounded-2xl border border-border bg-card p-4 shadow-soft">

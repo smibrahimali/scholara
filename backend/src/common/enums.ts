@@ -38,3 +38,25 @@ export enum CallRequestStatus {
   CANCELLED = 'CANCELLED',
   COMPLETED = 'COMPLETED',
 }
+
+export enum PaymentStatus {
+  PAID = 'PAID',
+  UPCOMING = 'UPCOMING',
+}
+
+export enum PaymentCategory {
+  CONSULTANT = 'CONSULTANT',
+  UNIVERSITY = 'UNIVERSITY',
+  APPLICATION = 'APPLICATION',
+  DOCUMENT = 'DOCUMENT',
+  OTHER = 'OTHER',
+}
+
+/**
+ * Student-facing email log is consultant → student only.
+ * University mail is handled by the consultant and conveyed here.
+ */
+export enum EmailDirection {
+  /** Consultant message to the student (visible in Email log). */
+  TO_STUDENT = 'TO_STUDENT',
+}

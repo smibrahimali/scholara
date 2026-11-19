@@ -47,8 +47,12 @@ export class DocumentsService {
     );
     const docs = await this.documentsRepo.find({
       where: { studentId: resolvedStudentId },
-      relations: { reviews: { reviewer: true } },
+      relations: {
+        reviews: { reviewer: true },
+        application: { university: true },
+      },
       order: { updatedAt: 'DESC' },
+      take: 100,
     });
     return docs.map((d) => this.toDto(d));
   }
@@ -129,7 +133,10 @@ export class DocumentsService {
 
     const saved = await this.documentsRepo.findOne({
       where: { id: document.id },
-      relations: { reviews: { reviewer: true } },
+      relations: {
+        reviews: { reviewer: true },
+        application: { university: true },
+      },
     });
     return this.toDto(saved!);
   }
@@ -155,14 +162,7 @@ export class DocumentsService {
       );
     }
 
-    const exists = await this.storage.objectExists(document.storagePath);
-    if (!exists) {
-      await this.clearMissingFile(document);
-      throw new NotFoundException(
-        'File is missing from storage. Please upload again.',
-      );
-    }
-
+    // createSignedUrl already detects missing objects — skip a separate list probe.
     try {
       const url = await this.storage.createSignedUrl(document.storagePath);
       return { url, expiresInSeconds: 600 };
@@ -244,15 +244,54 @@ export class DocumentsService {
 
     const saved = await this.documentsRepo.findOne({
       where: { id: document.id },
-      relations: { reviews: { reviewer: true } },
+      relations: {
+        reviews: { reviewer: true },
+        application: { university: true },
+      },
     });
     return this.toDto(saved!);
   }
 
   private toDto(document: Document) {
+    const universityName = document.application?.university?.name ?? null;
+    const universityId = document.application?.universityId ?? null;
     return {
-      ...document,
+      id: document.id,
+      studentId: document.studentId,
+      title: document.title,
+      documentType: document.documentType,
+      status: document.status,
+      rejectionReason: document.rejectionReason,
+      storagePath: document.storagePath,
       hasFile: Boolean(document.storagePath),
+      applicationId: document.applicationId ?? null,
+      universityId,
+      universityName,
+      scope: document.applicationId
+        ? ('UNIVERSITY' as const)
+        : ('GENERAL' as const),
+      uploadedAt: document.uploadedAt,
+      lastReviewedAt: document.lastReviewedAt,
+      verifiedAt: document.verifiedAt,
+      rejectedAt: document.rejectedAt,
+      createdAt: document.createdAt,
+      updatedAt: document.updatedAt,
+      reviews: (document.reviews ?? []).map((review) => ({
+        id: review.id,
+        documentId: review.documentId,
+        reviewerId: review.reviewerId,
+        decision: review.decision,
+        reason: review.reason,
+        createdAt: review.createdAt,
+        reviewer: review.reviewer
+          ? {
+              id: review.reviewer.id,
+              fullName: review.reviewer.fullName,
+              email: review.reviewer.email,
+              role: review.reviewer.role,
+            }
+          : undefined,
+      })),
     };
   }
 }

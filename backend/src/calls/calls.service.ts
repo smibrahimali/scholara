@@ -36,17 +36,41 @@ export class CallsService {
       studentId,
     );
 
-    // Omit heavy transcript blobs from list; detail endpoint still returns full rows.
-    const sessions = await this.sessionsRepo.find({
-      where: { studentId: resolvedStudentId },
-      relations: {
-        note: true,
-        consultant: { user: true },
-        student: { user: true },
-      },
-      order: { startedAt: 'DESC' },
-      take: 40,
-    });
+    // Select list columns only — do not pull growing transcript blobs.
+    const sessions = await this.sessionsRepo
+      .createQueryBuilder('session')
+      .leftJoinAndSelect('session.note', 'note')
+      .leftJoinAndSelect('session.consultant', 'consultant')
+      .leftJoinAndSelect('consultant.user', 'consultantUser')
+      .leftJoinAndSelect('session.student', 'student')
+      .leftJoinAndSelect('student.user', 'studentUser')
+      .select([
+        'session.id',
+        'session.studentId',
+        'session.consultantId',
+        'session.startedAt',
+        'session.endedAt',
+        'session.createdAt',
+        'session.updatedAt',
+        'note.id',
+        'note.summary',
+        'note.actionItems',
+        'note.universitiesDiscussed',
+        'note.followUps',
+        'note.createdAt',
+        'consultant.id',
+        'consultantUser.id',
+        'consultantUser.fullName',
+        'student.id',
+        'studentUser.id',
+        'studentUser.fullName',
+      ])
+      .where('session.studentId = :studentId', {
+        studentId: resolvedStudentId,
+      })
+      .orderBy('session.startedAt', 'DESC')
+      .take(40)
+      .getMany();
 
     return sessions.map((session) => ({
       ...session,
@@ -174,9 +198,20 @@ export class CallsService {
   }
 
   private async appendTranscriptLine(session: CallSession, line: string) {
-    const existing = session.transcript?.trim();
-    session.transcript = existing ? `${existing}\n${line}` : line;
-    await this.sessionsRepo.save(session);
+    // Append in SQL so we do not read-modify-write a growing text blob in Node.
+    await this.sessionsRepo.query(
+      `UPDATE call_sessions
+       SET transcript = CASE
+         WHEN transcript IS NULL OR btrim(transcript) = '' THEN $1
+         ELSE transcript || E'\\n' || $1
+       END,
+       updated_at = NOW()
+       WHERE id = $2`,
+      [line, session.id],
+    );
+    session.transcript = session.transcript?.trim()
+      ? `${session.transcript.trim()}\n${line}`
+      : line;
   }
 
   private async requireLiveParticipant(user: JwtPayload, id: string) {

@@ -12,11 +12,19 @@ export async function fetchChatMessages() {
   return data;
 }
 
-export async function sendChatMessage(content: string, studentId?: string) {
+export async function sendChatMessage(
+  content: string,
+  studentId?: string,
+  options?: { signal?: AbortSignal },
+) {
   const { data } = await api.post<{
     userMessage: ChatMessageDto;
     assistantMessage: ChatMessageDto;
-  }>('/chat/messages', { content, studentId });
+  }>(
+    '/chat/messages',
+    { content, studentId },
+    { timeout: 45_000, signal: options?.signal },
+  );
   return data;
 }
 

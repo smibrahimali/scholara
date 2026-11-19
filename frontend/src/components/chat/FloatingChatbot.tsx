@@ -67,6 +67,7 @@ import {
   type StatusTone,
 } from '../../lib/chatFormat';
 import { cn } from '../../lib/cn';
+import { withFrom } from '../../lib/navigation';
 import {
   clearChatMessages,
   fetchChatMessages,
@@ -101,17 +102,16 @@ const STUDENT_STARTERS: StarterTile[] = [
     icon: ClipboardList,
   },
   {
-    title: 'Schedule 1:1 Call/Chat',
+    title: 'Schedule 1:1 Call',
     hint: 'Pick a date & time',
-    prompt:
-      'I would like to schedule a 1:1 call or live chat with my consultant.',
+    prompt: 'I would like to schedule a 1:1 audio call with my consultant.',
     icon: CalendarPlus,
   },
 ];
 
 const GUARDIAN_STARTERS: StarterTile[] = [
   {
-    title: 'Dossier Overview',
+    title: 'Student overview',
     hint: 'Read-only progress snapshot',
     prompt: 'Give me a read-only overview of my student dossier and progress.',
     icon: ClipboardList,
@@ -147,7 +147,7 @@ const CONSULTANT_STARTERS: StarterTile[] = [
   {
     title: 'Call & Chat Requests',
     hint: 'Pending session queue',
-    prompt: 'Summarize pending call and chat requests across my students.',
+    prompt: 'Summarize pending call requests across my students.',
     icon: CalendarClock,
   },
   {
@@ -199,7 +199,7 @@ const STATUS_PILL_STYLES: Record<StatusTone, string> = {
   success: 'status-success',
   warning: 'status-warning font-semibold',
   danger: 'status-danger',
-  muted: 'status-pending',
+  muted: 'status-neutral',
 };
 
 function ItemStatusCard({
@@ -450,7 +450,7 @@ function StatusPill({
 type ActiveScheduleState = {
   messageId: string;
   directiveMode: ScheduleSessionMode;
-  kind: 'CALL' | 'CHAT' | null;
+  kind: 'CALL' | null;
   incomplete: boolean;
   /** User cancelled this wizard — keep expired, do not remount. */
   dismissed: boolean;
@@ -475,10 +475,9 @@ function findLatestSchedule(
   return null;
 }
 
-function scheduleKindLabel(kind: 'CALL' | 'CHAT' | null | ScheduleSessionMode) {
+function scheduleKindLabel(kind: 'CALL' | null | ScheduleSessionMode) {
   if (kind === 'CALL') return 'call';
-  if (kind === 'CHAT') return 'chat';
-  return 'session';
+  return 'call';
 }
 
 /** Any new schedule card while a wizard is incomplete needs an explicit handoff. */
@@ -492,10 +491,10 @@ function needsScheduleHandoff(
 }
 
 function isCrossKindSwitch(
-  currentKind: 'CALL' | 'CHAT' | null,
+  currentKind: 'CALL' | null,
   nextMode: ScheduleSessionMode,
 ): boolean {
-  if (!currentKind) return false;
+  if (!currentKind) return nextMode !== 'ANY' && nextMode !== 'CALL';
   if (nextMode === 'ANY') return false;
   return nextMode !== currentKind;
 }
@@ -551,7 +550,7 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
     }
     setPendingNavigate(null);
     setOpen(false);
-    navigate(directive.path);
+    navigate(directive.path, withFrom(pathname));
   }
 
   function confirmLeaveWizardAndNavigate() {
@@ -568,7 +567,7 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
     setPendingNavigate(null);
     setPendingSwitch(null);
     setOpen(false);
-    navigate(directive.path);
+    navigate(directive.path, withFrom(pathname));
   }
 
   const sendMutation = useMutation({
@@ -579,6 +578,7 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
     },
     onSuccess: ({ data, epoch }) => {
       if (epoch !== chatEpochRef.current) return;
+      // Mutation already returns both messages — update cache, skip redundant GET.
       queryClient.setQueryData<ChatMessageDto[]>(['chat-messages'], (prev) => {
         const list = prev ?? [];
         const next = [...list];
@@ -590,7 +590,6 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
         }
         return next;
       });
-      void queryClient.invalidateQueries({ queryKey: ['chat-messages'] });
       setDraft('');
       // Never auto-navigate or switch views — user must tap an action button.
     },
@@ -712,7 +711,7 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
         return {
           messageId: latest.id,
           directiveMode: latest.mode,
-          kind: latest.mode === 'ANY' ? null : latest.mode,
+          kind: latest.mode === 'ANY' ? null : 'CALL',
           incomplete: true,
           dismissed: false,
         };
@@ -722,7 +721,7 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
         return {
           messageId: latest.id,
           directiveMode: latest.mode,
-          kind: latest.mode === 'ANY' ? null : latest.mode,
+          kind: latest.mode === 'ANY' ? null : 'CALL',
           incomplete: true,
           dismissed: false,
         };
@@ -735,7 +734,7 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
         return {
           messageId: latest.id,
           directiveMode: latest.mode,
-          kind: latest.mode === 'ANY' ? null : latest.mode,
+          kind: latest.mode === 'ANY' ? null : 'CALL',
           incomplete: true,
           dismissed: false,
         };
@@ -803,7 +802,7 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
     sendContent(draft);
   }
 
-  const deskLabel = studentId ? 'Dossier Desk' : 'Admissions Desk';
+  const deskLabel = studentId ? 'Student file desk' : 'Admissions desk';
 
   return (
     <>
@@ -814,16 +813,17 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 12 }}
             transition={{ duration: 0.2 }}
-            className="absolute inset-x-0 top-0 bottom-[96px] z-[60] flex h-auto flex-col overflow-hidden rounded-none border-0 bg-background"
+            className="absolute inset-x-0 top-0 z-[60] flex h-auto flex-col overflow-hidden rounded-none border-0 bg-background"
+            style={{ bottom: 'var(--chrome-bottom)' }}
           >
             <header className="flex shrink-0 items-center justify-between gap-2 bg-[#111827] px-4 py-3 text-white">
               <div className="flex min-w-0 items-center gap-2.5">
                 <CrestMark size={28} />
                 <div className="min-w-0">
-                  <p className="truncate font-serif text-sm font-semibold leading-tight tracking-tight text-white">
+                  <p className="editorial-title truncate text-sm tracking-tight text-white">
                     Scholara Assistant
                   </p>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-[10px] font-medium tracking-wide text-slate-300">
+                  <p className="mt-0.5 flex items-center gap-1.5 text-[0.6875rem] font-medium tracking-wide text-slate-300">
                     <span
                       className={cn(
                         'h-1.5 w-1.5 shrink-0 rounded-full',
@@ -1054,7 +1054,7 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
                             setActiveSchedule({
                               messageId: next.messageId,
                               directiveMode: next.mode,
-                              kind: next.mode === 'ANY' ? null : next.mode,
+                              kind: next.mode === 'ANY' ? null : 'CALL',
                               incomplete: true,
                               dismissed: false,
                             });
@@ -1203,9 +1203,10 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
           whileTap={{ scale: 0.97 }}
           aria-label="Open Scholara assistant"
           onClick={() => setOpen(true)}
-          className="absolute bottom-[100px] right-4 z-[60] flex h-[3.25rem] w-[3.25rem] items-center justify-center rounded-full bg-[#111827] text-white shadow-fab transition-all duration-200 ease-out hover:-translate-y-0.5 active:translate-y-[1px] active:shadow-none"
+          className="absolute right-4 z-[60] flex h-12 w-12 items-center justify-center rounded-full bg-[#111827] text-white shadow-fab transition-all duration-200 ease-out hover:-translate-y-0.5 active:translate-y-[1px] active:shadow-none"
+          style={{ bottom: 'var(--fab-bottom)' }}
         >
-          <MessageCircle className="h-5 w-5 text-white" strokeWidth={1.5} />
+          <MessageCircle className="h-[1.15rem] w-[1.15rem] text-white" strokeWidth={1.5} />
         </motion.button>
       ) : null}
     </>
@@ -1219,7 +1220,7 @@ function scheduleRoleNote(role?: string) {
   if (role === 'CONSULTANT') {
     return 'Consultants approve and manage 1:1 sessions from the desk — this booking picker is for students only.';
   }
-  return 'Only students can book 1:1 call or chat sessions from this assistant.';
+  return 'Only students can book 1:1 audio calls from this assistant. Use Messages for everyday chat with your consultant.';
 }
 
 /**

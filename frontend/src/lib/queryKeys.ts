@@ -48,6 +48,9 @@ export function callKey(callId: string | undefined) {
   return ['call', callId] as const;
 }
 
-export const chatMessagesKey = ['chat-messages'] as const;
+/** Assistant thread scoped by dossier (consultant) or self. */
+export function chatMessagesKey(studentScope?: string) {
+  return ['chat-messages', studentScope ?? 'self'] as const;
+}
 export const consultantStudentsKey = ['consultant-students'] as const;
 export const consultantPeersKey = ['consultant-peers'] as const;

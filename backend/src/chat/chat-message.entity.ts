@@ -23,6 +23,16 @@ export class ChatMessage {
   @JoinColumn({ name: 'user_id' })
   user!: User;
 
+  /**
+   * Dossier scope for this turn.
+   * - Student/guardian: their readable student profile id
+   * - Consultant in a dossier: that student id
+   * - Consultant desk (no dossier): null
+   */
+  @Index('idx_chat_messages_context_student_id')
+  @Column({ name: 'context_student_id', type: 'uuid', nullable: true })
+  contextStudentId!: string | null;
+
   @Column()
   role!: 'user' | 'assistant' | 'system';
 

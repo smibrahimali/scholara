@@ -6,8 +6,9 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
@@ -23,19 +24,22 @@ import {
   MessageSquare,
   MessageSquarePlus,
   NotebookPen,
-  Send,
   Sparkles,
-  Trash2,
   Users,
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CrestMark } from '../ivy/CrestMark';
 import { TapButton } from '../ivy/TapButton';
+import { ChatComposer } from './ChatComposer';
+import { ChatHeader } from './ChatHeader';
+import { QuickActionCard } from './QuickActionCard';
 import {
   SessionSchedulerCard,
   type ScheduleWizardStatus,
 } from './SessionSchedulerCard';
+import { SuggestionChips } from './SuggestionChips';
+import { TypingIndicator } from './TypingIndicator';
 import { useAuth } from '../../context/AuthContext';
 import {
   ENUM_TOKEN_RE,
@@ -68,6 +72,7 @@ import {
 } from '../../lib/chatFormat';
 import { cn } from '../../lib/cn';
 import { withFrom } from '../../lib/navigation';
+import { chatMessagesKey } from '../../lib/queryKeys';
 import {
   clearChatMessages,
   fetchChatMessages,
@@ -84,25 +89,25 @@ type StarterTile = {
 
 const STUDENT_STARTERS: StarterTile[] = [
   {
-    title: 'Missing Documents',
+    title: 'Missing Docs',
     hint: 'Uploads & review notes',
     prompt: 'Which documents are still missing or need attention?',
     icon: FileWarning,
   },
   {
-    title: 'Upcoming Deadlines',
+    title: 'Deadlines',
     hint: 'What is due next',
     prompt: 'What upcoming deadlines should I prioritize next?',
     icon: CalendarClock,
   },
   {
-    title: 'Application Progress',
+    title: 'My Progress',
     hint: 'Steps & next moves',
     prompt: 'Summarize my application progress and what to do next.',
     icon: ClipboardList,
   },
   {
-    title: 'Schedule 1:1 Call',
+    title: 'Book a Call',
     hint: 'Pick a date & time',
     prompt: 'I would like to schedule a 1:1 audio call with my consultant.',
     icon: CalendarPlus,
@@ -111,56 +116,58 @@ const STUDENT_STARTERS: StarterTile[] = [
 
 const GUARDIAN_STARTERS: StarterTile[] = [
   {
-    title: 'Student overview',
+    title: 'Overview',
     hint: 'Read-only progress snapshot',
     prompt: 'Give me a read-only overview of my student dossier and progress.',
     icon: ClipboardList,
   },
   {
-    title: 'Document Status',
+    title: 'Documents',
     hint: 'Verified, review, missing',
     prompt: 'What is the current document status for my linked student?',
     icon: FileWarning,
   },
   {
-    title: 'Upcoming Deadlines',
+    title: 'Deadlines',
     hint: 'What is coming up',
     prompt: 'What upcoming deadlines should we prioritize for my student?',
     icon: CalendarClock,
   },
   {
-    title: 'Consultant Call Notes',
-    hint: 'Session notes (view only)',
-    prompt: 'Summarize recent consultant call notes for my linked student.',
+    title: 'Progress',
+    hint: 'Steps & decisions on record',
+    prompt:
+      'Summarize my linked student application progress from the Scholara record.',
     icon: NotebookPen,
   },
 ];
 
 const CONSULTANT_STARTERS: StarterTile[] = [
   {
-    title: 'Pending Document Reviews',
+    title: 'Pending Reviews',
     hint: 'Awaiting your decision',
     prompt:
       'Which assigned students have documents pending review right now?',
     icon: FileWarning,
   },
   {
-    title: 'Call & Chat Requests',
-    hint: 'Pending session queue',
-    prompt: 'Summarize pending call requests across my students.',
-    icon: CalendarClock,
+    title: 'Rejected Docs',
+    hint: 'Needs student re-upload',
+    prompt:
+      'Which assigned students have rejected documents that still need attention?',
+    icon: FileWarning,
   },
   {
-    title: 'Assigned Students Summary',
+    title: 'My Students',
     hint: 'Portfolio snapshot',
     prompt: 'Give me a concise summary of my assigned students and priorities.',
     icon: Users,
   },
   {
-    title: 'Handover Readiness',
-    hint: 'Who needs a peer handoff',
+    title: 'Open a File',
+    hint: 'Deep dive in a dossier',
     prompt:
-      'Which students look ready for consultant handover and what should I check first?',
+      'Remind me how to open a student dossier for detailed documents and applications.',
     icon: Handshake,
   },
 ];
@@ -512,19 +519,34 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
   const [pendingNavigate, setPendingNavigate] =
     useState<NavigateDirective | null>(null);
   const [pendingEndChat, setPendingEndChat] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [lastFailedPrompt, setLastFailedPrompt] = useState<string | null>(null);
+  const [showScrollLatest, setShowScrollLatest] = useState(false);
   const dismissedSwitchIdsRef = useRef<Set<string>>(new Set());
   /** Bumped on clear so late send successes cannot revive a wiped thread. */
   const chatEpochRef = useRef(0);
+  const sendAbortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const launcherRef = useRef<HTMLButtonElement>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement>(null);
+  const wasOpenRef = useRef(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { user } = useAuth();
   const welcomeStarters = startersForRole(user?.role);
+  const messagesKey = chatMessagesKey(studentId);
+
+  const closeChat = useCallback(() => {
+    sendAbortRef.current?.abort();
+    sendAbortRef.current = null;
+    setOpen(false);
+  }, []);
 
   const messagesQuery = useQuery({
-    queryKey: ['chat-messages'],
-    queryFn: fetchChatMessages,
+    queryKey: messagesKey,
+    queryFn: () => fetchChatMessages(studentId),
     enabled: open,
   });
 
@@ -573,13 +595,24 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
   const sendMutation = useMutation({
     mutationFn: async (content: string) => {
       const epoch = chatEpochRef.current;
-      const data = await sendChatMessage(content, studentId);
-      return { data, epoch };
+      sendAbortRef.current?.abort();
+      const controller = new AbortController();
+      sendAbortRef.current = controller;
+      try {
+        const data = await sendChatMessage(content, studentId, {
+          signal: controller.signal,
+        });
+        return { data, epoch };
+      } finally {
+        if (sendAbortRef.current === controller) {
+          sendAbortRef.current = null;
+        }
+      }
     },
     onSuccess: ({ data, epoch }) => {
       if (epoch !== chatEpochRef.current) return;
       // Mutation already returns both messages — update cache, skip redundant GET.
-      queryClient.setQueryData<ChatMessageDto[]>(['chat-messages'], (prev) => {
+      queryClient.setQueryData<ChatMessageDto[]>(messagesKey, (prev) => {
         const list = prev ?? [];
         const next = [...list];
         if (!next.some((m) => m.id === data.userMessage.id)) {
@@ -593,10 +626,19 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
       setDraft('');
       // Never auto-navigate or switch views — user must tap an action button.
     },
-    onError: (err) => {
+    onError: (err, content) => {
+      if (
+        err &&
+        typeof err === 'object' &&
+        'code' in err &&
+        (err as { code?: string }).code === 'ERR_CANCELED'
+      ) {
+        return;
+      }
       const msg = errorMessage(err, 'Chat failed');
       // Quiet when the thread was cleared mid-send (backend + epoch).
       if (/cleared while sending/i.test(msg)) return;
+      setLastFailedPrompt(content);
       toast.error(msg);
     },
   });
@@ -604,15 +646,19 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
   const clearMutation = useMutation({
     mutationFn: async () => {
       chatEpochRef.current += 1;
+      sendAbortRef.current?.abort();
+      sendAbortRef.current = null;
       sendMutation.reset();
-      await queryClient.cancelQueries({ queryKey: ['chat-messages'] });
-      return clearChatMessages();
+      await queryClient.cancelQueries({ queryKey: messagesKey });
+      return clearChatMessages(studentId);
     },
     onSuccess: () => {
-      queryClient.setQueryData<ChatMessageDto[]>(['chat-messages'], []);
+      queryClient.setQueryData<ChatMessageDto[]>(messagesKey, []);
       resetScheduleTracking();
       setShowStarterHome(true);
       setDraft('');
+      setLastFailedPrompt(null);
+      setClearConfirmOpen(false);
       toast.success('Chat cleared');
     },
     onError: () => toast.error('Could not clear chat'),
@@ -671,7 +717,7 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
       !messagesQuery.isError &&
       messages.length === 0);
 
-  // Consultant dossier switch: wipe shared chat so contexts do not mix.
+  // Consultant dossier switch: threads are server-scoped by studentId — reset local UI only.
   const prevStudentIdRef = useRef(studentId);
   useEffect(() => {
     if (user?.role !== 'CONSULTANT') {
@@ -681,19 +727,21 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
     if (prevStudentIdRef.current === studentId) return;
     prevStudentIdRef.current = studentId;
     chatEpochRef.current += 1;
+    sendAbortRef.current?.abort();
+    sendAbortRef.current = null;
     sendMutation.reset();
-    void clearChatMessages()
-      .then(() => {
-        queryClient.setQueryData<ChatMessageDto[]>(['chat-messages'], []);
-        resetScheduleTracking();
-        setShowStarterHome(true);
-        setDraft('');
-      })
-      .catch(() => {
-        /* best-effort */
-      });
+    resetScheduleTracking();
+    setShowStarterHome(true);
+    setDraft('');
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only on dossier change
   }, [studentId, user?.role]);
+
+  useEffect(() => {
+    return () => {
+      sendAbortRef.current?.abort();
+      sendAbortRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (messages.length === 0) {
@@ -775,16 +823,67 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
 
   useEffect(() => {
     if (!open || viewingHome) return;
+    if (showScrollLatest) return;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [
     open,
     viewingHome,
     messages.length,
     sendMutation.isPending,
+    lastFailedPrompt,
     pendingSwitch,
     pendingNavigate,
     pendingEndChat,
+    showScrollLatest,
   ]);
+
+  // Lock background page scroll while the assistant covers the shell.
+  useEffect(() => {
+    if (!open) return;
+    const main = document.getElementById('scholara-main');
+    const prevOverflow = main?.style.overflow ?? '';
+    if (main) main.style.overflow = 'hidden';
+    return () => {
+      if (main) main.style.overflow = prevOverflow;
+    };
+  }, [open]);
+
+  // Escape closes confirm first, then the panel; focus moves to input on open.
+  useEffect(() => {
+    if (open) {
+      wasOpenRef.current = true;
+      const focusTimer = window.setTimeout(() => {
+        composerInputRef.current?.focus();
+      }, 40);
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        if (clearConfirmOpen) {
+          setClearConfirmOpen(false);
+          return;
+        }
+        if (pendingEndChat) {
+          setPendingEndChat(false);
+          return;
+        }
+        closeChat();
+      };
+      window.addEventListener('keydown', onKeyDown);
+      return () => {
+        window.clearTimeout(focusTimer);
+        window.removeEventListener('keydown', onKeyDown);
+      };
+    }
+    if (wasOpenRef.current) {
+      wasOpenRef.current = false;
+      setClearConfirmOpen(false);
+      const focusTimer = window.setTimeout(() => {
+        launcherRef.current?.focus();
+      }, 40);
+      return () => window.clearTimeout(focusTimer);
+    }
+    return undefined;
+  }, [open, closeChat, clearConfirmOpen, pendingEndChat]);
 
   function sendContent(raw: string) {
     const content = raw.trim();
@@ -793,6 +892,8 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
       toast.error('Message must be 4000 characters or fewer');
       return;
     }
+    setLastFailedPrompt(null);
+    setShowScrollLatest(false);
     setShowStarterHome(false);
     sendMutation.mutate(content);
   }
@@ -802,135 +903,136 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
     sendContent(draft);
   }
 
+  function scrollToLatest(behavior: ScrollBehavior = 'smooth') {
+    bottomRef.current?.scrollIntoView({ behavior });
+    setShowScrollLatest(false);
+  }
+
+  function onMessageListScroll() {
+    const el = scrollAreaRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowScrollLatest(distanceFromBottom > 96);
+  }
+
+  const firstName = (user?.fullName ?? '').trim().split(/\s+/)[0] || null;
+  const greetingHint =
+    user?.role === 'CONSULTANT'
+      ? 'I can see your assigned students, reviews, and handovers.'
+      : user?.role === 'GUARDIAN'
+        ? 'I can see your linked student’s documents, deadlines, and applications.'
+        : 'I can see your documents, deadlines and applications.';
+
   const deskLabel = studentId ? 'Student file desk' : 'Admissions desk';
+  const portalTarget =
+    typeof document !== 'undefined'
+      ? document.getElementById('scholara-phone-shell') ?? document.body
+      : null;
 
-  return (
-    <>
-      <AnimatePresence>
-        {open ? (
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 12 }}
-            transition={{ duration: 0.2 }}
-            className="absolute inset-x-0 top-0 z-[60] flex h-auto flex-col overflow-hidden rounded-none border-0 bg-background"
-            style={{ bottom: 'var(--chrome-bottom)' }}
-          >
-            <header className="flex shrink-0 items-center justify-between gap-2 bg-[#111827] px-4 py-3 text-white">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <CrestMark size={28} />
-                <div className="min-w-0">
-                  <p className="editorial-title truncate text-sm tracking-tight text-white">
-                    Scholara Assistant
-                  </p>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-[0.6875rem] font-medium tracking-wide text-slate-300">
-                    <span
-                      className={cn(
-                        'h-1.5 w-1.5 shrink-0 rounded-full',
-                        messagesQuery.isError || sendMutation.isError
-                          ? 'bg-amber-400'
-                          : sendMutation.isPending
-                            ? 'animate-pulse bg-gold'
-                            : 'bg-emerald-400',
-                      )}
-                      aria-hidden
-                    />
-                    <span className="truncate">
-                      {messagesQuery.isError || sendMutation.isError
-                        ? `Unavailable · ${deskLabel}`
-                        : sendMutation.isPending
-                          ? `Thinking · ${deskLabel}`
-                          : `Online · ${deskLabel}`}
-                    </span>
-                  </p>
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <TapButton
-                  aria-label="Assistant home menu"
-                  className="flex h-9 w-9 min-h-[36px] min-w-[36px] items-center justify-center rounded-full text-slate-300 hover:bg-white/10 hover:text-white"
-                  onClick={() => setShowStarterHome(true)}
-                >
-                  <Home className="h-4 w-4 text-inherit" strokeWidth={1.5} />
-                </TapButton>
-                <TapButton
-                  aria-label="Clear chat"
-                  className="flex h-9 w-9 min-h-[36px] min-w-[36px] items-center justify-center rounded-full text-slate-300 hover:bg-white/10 hover:text-white disabled:opacity-40"
-                  onClick={requestEndChat}
-                  disabled={clearMutation.isPending || messages.length === 0}
-                >
-                  <Trash2 className="h-4 w-4 text-inherit" strokeWidth={1.5} />
-                </TapButton>
-                <TapButton
-                  aria-label="Close chat"
-                  className="flex h-9 w-9 min-h-[36px] min-w-[36px] items-center justify-center rounded-full text-slate-300 hover:bg-white/10 hover:text-white"
-                  onClick={() => setOpen(false)}
-                >
-                  <X className="h-4 w-4 text-inherit" strokeWidth={1.5} />
-                </TapButton>
-              </div>
-            </header>
+  const chatPanel = (
+    <AnimatePresence>
+      {open ? (
+        <motion.div
+          key="scholara-assistant-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Scholara Assistant"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 12 }}
+          transition={{ duration: 0.2 }}
+          className="absolute inset-0 z-[80] flex h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-hidden rounded-none border-0 bg-[#F7F6F3] sm:h-full sm:max-h-none"
+        >
+          <ChatHeader
+            status={
+              messagesQuery.isError || sendMutation.isError
+                ? 'unavailable'
+                : sendMutation.isPending
+                  ? 'thinking'
+                  : 'online'
+            }
+            deskLabel={deskLabel}
+            canClear={messages.length > 0}
+            clearPending={clearMutation.isPending}
+            onHome={() => setShowStarterHome(true)}
+            onClear={() => setClearConfirmOpen(true)}
+            onClose={closeChat}
+          />
 
-            <div className="no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
+            <div className="relative flex min-h-0 flex-1 flex-col">
+            <div
+              ref={scrollAreaRef}
+              onScroll={onMessageListScroll}
+              className="no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pb-[var(--chat-scroll-pad-bottom)]"
+              role="log"
+              aria-live="polite"
+              aria-relevant="additions"
+              aria-label="Assistant conversation"
+            >
               {messagesQuery.isLoading ? (
-                <p className="px-4 py-6 text-center text-xs font-semibold text-muted-foreground">
-                  Loading conversation…
-                </p>
+                <div className="space-y-3 px-3.5 py-4" aria-busy="true">
+                  <div className="h-16 animate-pulse rounded-2xl bg-[#EBE8E0]/80" />
+                  <div className="ml-auto h-12 w-[70%] animate-pulse rounded-2xl bg-[#E8E2D6]/90" />
+                  <div className="h-20 w-[85%] animate-pulse rounded-2xl bg-[#EBE8E0]/80" />
+                </div>
               ) : null}
               {messagesQuery.isError ? (
-                <p className="px-4 py-6 text-center text-xs font-semibold text-destructive">
-                  Could not load chat history. Try again shortly.
-                </p>
+                <div className="px-4 py-5 text-center">
+                  <p className="text-xs font-semibold text-destructive">
+                    Could not load chat history.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void messagesQuery.refetch()}
+                    className="mt-2 inline-flex items-center rounded-xl border border-[#E5CE96] bg-[#FFFDF9] px-3 py-1.5 text-[11px] font-semibold text-[#0F1E36] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8963E]/45"
+                  >
+                    Retry
+                  </button>
+                </div>
               ) : null}
 
               {viewingHome &&
               !messagesQuery.isLoading &&
               !messagesQuery.isError ? (
-                <div className="flex flex-col px-4 py-5">
-                  <div className="flex flex-col items-center pt-2 text-center">
-                    <CrestMark size={44} />
-                    <h2 className="mt-3 font-sans text-lg font-semibold leading-snug tracking-tight text-[#1E2430]">
-                      How can I help with your file?
-                    </h2>
-                    <p className="mt-1.5 max-w-[18rem] text-xs leading-relaxed text-muted-foreground">
-                      {user?.role === 'CONSULTANT'
-                        ? 'Ask about reviews, requests, students, or handovers.'
-                        : user?.role === 'GUARDIAN'
-                          ? 'Read-only overview of documents, deadlines, and notes.'
-                          : 'Ask about documents, deadlines, or application steps.'}
-                    </p>
+                <div className="flex flex-col px-3.5 pb-2 pt-3">
+                  <div className="flex items-start gap-2.5">
+                    <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#0F1E36] ring-1 ring-[#E5CE96]/45">
+                      <CrestMark size={16} />
+                    </span>
+                    <div className="min-w-0 rounded-2xl rounded-bl-md border border-[#E8E2D6] bg-white px-3 py-2.5 shadow-[0_1px_2px_rgba(15,30,54,0.03)]">
+                      <h2 className="font-sans text-[13px] font-semibold leading-snug tracking-tight text-[#1E2430]">
+                        {firstName
+                          ? `Hi ${firstName} — how can I help today?`
+                          : 'How can I help today?'}
+                      </h2>
+                      <p className="mt-1 text-[11.5px] leading-snug text-[#6B7280]">
+                        {greetingHint}
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="mt-5 pb-1">
-                    <div className="grid grid-cols-2 gap-2.5">
-                      {welcomeStarters.map(({ title, hint, prompt, icon: Icon }) => (
-                        <TapButton
+                  <div className="mt-3">
+                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6B7280]">
+                      Suggested
+                    </p>
+                    <div className="flex flex-col gap-1.5">
+                      {welcomeStarters.map(({ title, hint, prompt, icon }) => (
+                        <QuickActionCard
                           key={title}
-                          type="button"
+                          title={title}
+                          hint={hint}
+                          icon={icon}
                           disabled={sendMutation.isPending}
                           onClick={() => sendContent(prompt)}
-                          className="btn-outline flex min-h-[5.75rem] flex-col items-start gap-2 rounded-xl px-3 py-3 text-left transition active:scale-[0.98]"
-                        >
-                          <span className="ivy-medallion flex h-8 w-8 items-center justify-center rounded-lg">
-                            <Icon className="h-4 w-4" />
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block text-[12px] font-semibold leading-tight text-foreground">
-                              {title}
-                            </span>
-                            <span className="mt-0.5 block text-[10px] leading-snug text-muted-foreground">
-                              {hint}
-                            </span>
-                          </span>
-                        </TapButton>
+                        />
                       ))}
                     </div>
                     {messages.length > 0 ? (
-                      <div className="mt-2.5 grid grid-cols-2 gap-2">
+                      <div className="mt-2.5 grid grid-cols-2 gap-1.5">
                         <TapButton
                           type="button"
                           onClick={() => setShowStarterHome(false)}
-                          className="flex items-center justify-center gap-1.5 rounded-full bg-[#111827] px-3 py-2 text-[11px] font-medium text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.15)]"
+                          className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-[#0F1E36] px-3 py-2 text-[11px] font-semibold text-white transition-colors duration-150 hover:bg-[#152844]"
                         >
                           <MessageSquare className="h-3 w-3" />
                           Resume chat
@@ -938,12 +1040,12 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
                         </TapButton>
                         <TapButton
                           type="button"
-                          onClick={startNewChat}
+                          onClick={() => setClearConfirmOpen(true)}
                           disabled={clearMutation.isPending}
-                          className="flex items-center justify-center gap-1 rounded-full border border-[#D5C8B0] bg-[#FFFDF9] px-3 py-2 text-[11px] font-semibold text-[#0F1E36] hover:bg-[#F7F2E7]"
+                          className="flex min-h-10 items-center justify-center gap-1 rounded-xl border border-[#E5CE96] bg-[#FFFDF9] px-3 py-2 text-[11px] font-semibold text-[#0F1E36] transition-colors duration-150 hover:bg-[#FBF3DF]"
                         >
                           <MessageSquarePlus className="h-3 w-3" />
-                          {clearMutation.isPending ? 'Starting…' : 'New chat'}
+                          New chat
                         </TapButton>
                       </div>
                     ) : null}
@@ -954,11 +1056,11 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
               {!viewingHome &&
               !messagesQuery.isLoading &&
               !messagesQuery.isError ? (
-                <div className="space-y-3 px-4 py-4">
+                <div className="space-y-2 px-3.5 py-3">
                   {studentId && messages.length > 0 ? (
                     <p className="rounded-lg bg-secondary/80 px-2.5 py-1.5 text-[10px] font-semibold text-muted-foreground">
-                      Context is this student. Chat history is yours across
-                      dossiers — clear if switching topics.
+                      Context is this student file. Chat history for other
+                      dossiers stays separate.
                     </p>
                   ) : null}
                   {messages.map((msg, idx) => {
@@ -969,6 +1071,13 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
                         priorUserMessages.unshift(prev.content);
                       }
                     }
+                    const prevMsg = messages[idx - 1];
+                    const nextMsg = messages[idx + 1];
+                    const showAvatar =
+                      msg.role === 'assistant' &&
+                      (!prevMsg || prevMsg.role !== 'assistant');
+                    const showTimestamp =
+                      !nextMsg || nextMsg.role !== msg.role;
                     return (
                       <ChatBubble
                         key={msg.id}
@@ -992,6 +1101,8 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
                         canBookSession={user?.role === 'STUDENT'}
                         userRole={user?.role}
                         showSuggestions={idx === lastAssistantIndex}
+                        showAvatar={showAvatar}
+                        showTimestamp={showTimestamp}
                         scheduleActive={
                           activeScheduleIndex >= 0 &&
                           idx === activeScheduleIndex &&
@@ -1128,13 +1239,23 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
                     </div>
                   ) : null}
                   {sendMutation.isPending ? (
-                    <div className="flex w-full items-center gap-2 rounded-xl border border-border/70 bg-card px-3 py-2 text-xs font-semibold text-muted-foreground">
-                      <span className="flex gap-1" aria-hidden>
-                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gold" />
-                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gold [animation-delay:150ms]" />
-                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gold [animation-delay:300ms]" />
-                      </span>
-                      Reviewing dossier…
+                    <TypingIndicator />
+                  ) : null}
+                  {lastFailedPrompt && !sendMutation.isPending ? (
+                    <div className="rounded-2xl border border-[#E8B4B4] bg-[#FFF8F8] px-3.5 py-3">
+                      <p className="text-[12px] font-semibold text-[#9B1C1C]">
+                        Couldn’t send that message.
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-[#6B7280]">
+                        Check your connection and try again.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => sendContent(lastFailedPrompt)}
+                        className="mt-2 inline-flex items-center rounded-xl bg-[#0F1E36] px-3 py-1.5 text-[11px] font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8963E]/50"
+                      >
+                        Retry
+                      </button>
                     </div>
                   ) : null}
                   <div ref={bottomRef} />
@@ -1142,63 +1263,117 @@ export function FloatingChatbot({ studentId }: { studentId?: string }) {
               ) : null}
             </div>
 
-            {viewingHome && messages.length > 0 ? (
-              <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border/60 bg-background/95 px-3 py-2.5">
-                <p className="text-[11px] font-medium text-muted-foreground">
-                  Menu open — resume chat to keep typing.
-                </p>
-                <TapButton
-                  type="button"
-                  onClick={() => setShowStarterHome(false)}
-                  className="inline-flex items-center gap-1 rounded-full bg-[#111827] px-3 py-1.5 text-[11px] font-medium text-white"
-                >
-                  Resume
-                  <ArrowRight className="h-3 w-3" />
-                </TapButton>
-              </div>
-            ) : (
-              <form
-                onSubmit={onSubmit}
-                className="flex shrink-0 items-center gap-2 border-t border-border/60 bg-background/95 px-3 py-2.5"
+            {showScrollLatest && !viewingHome ? (
+              <button
+                type="button"
+                onClick={() => scrollToLatest()}
+                className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-[#E5CE96] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#0F1E36] shadow-[0_4px_12px_-6px_rgba(15,30,54,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8963E]/45"
               >
-                <textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value.slice(0, 4000))}
-                  rows={1}
-                  maxLength={4000}
-                  disabled={sendMutation.isPending}
-                  placeholder={
-                    viewingHome ? 'Or type a question…' : 'Ask Scholara…'
-                  }
-                  className="max-h-24 min-h-10 flex-1 resize-none rounded-full border border-[#EBE8E0] bg-[#F3F2F0] px-4 py-2.5 text-sm text-[#1E2430] shadow-well outline-none focus:border-[#C8963E] focus:bg-white focus:shadow-[0_0_0_2px_rgba(200,150,62,0.2)] disabled:border-[#EBE8E0] disabled:bg-[#F3F2F0] disabled:text-[#9CA3AF]"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      onSubmit(e);
-                    }
-                  }}
-                />
-                <TapButton
-                  type="submit"
-                  disabled={!draft.trim() || sendMutation.isPending}
-                  className={cn(
-                    'flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-colors',
-                    draft.trim()
-                      ? 'border-transparent bg-[#0F1E36] text-[#E6C365] shadow-xs'
-                      : 'border-[#E2D8C5] bg-[#EFE9DC] text-[#9A8F7D]',
-                  )}
-                  aria-label="Send message"
+                Scroll to latest
+              </button>
+            ) : null}
+            </div>
+
+          {!viewingHome && messages.length > 0 ? (
+            <SuggestionChips
+              items={welcomeStarters}
+              disabled={sendMutation.isPending}
+              onSelect={sendContent}
+            />
+          ) : null}
+
+          {viewingHome && messages.length > 0 ? (
+            <div
+              className={cn(
+                'flex shrink-0 items-center justify-between gap-2 border-t border-[#EBE8E0]/90 bg-[#F7F6F3] px-3 pt-2.5',
+                'pb-[max(0.65rem,env(safe-area-inset-bottom,0px))]',
+              )}
+            >
+              <p className="text-[11px] font-medium text-[#6B7280]">
+                Menu open — resume chat to keep typing.
+              </p>
+              <TapButton
+                type="button"
+                onClick={() => setShowStarterHome(false)}
+                className="inline-flex min-h-10 items-center gap-1 rounded-xl bg-[#0F1E36] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors duration-150 hover:bg-[#152844]"
+              >
+                Resume
+                <ArrowRight className="h-3 w-3" />
+              </TapButton>
+            </div>
+          ) : (
+            <ChatComposer
+              ref={composerInputRef}
+              draft={draft}
+              onDraftChange={setDraft}
+              onSubmit={onSubmit}
+              disabled={clearMutation.isPending}
+              sending={sendMutation.isPending}
+              placeholder="Ask a question about your application…"
+            />
+          )}
+
+          {clearConfirmOpen ? (
+            <div
+              className="absolute inset-0 z-[90] flex items-end justify-center bg-[#0F1E36]/35 px-4 pb-8 pt-4 sm:items-center"
+              role="presentation"
+              onClick={() => setClearConfirmOpen(false)}
+            >
+              <div
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="clear-chat-title"
+                aria-describedby="clear-chat-desc"
+                className="w-full max-w-sm rounded-2xl border border-[#E8E2D6] bg-white p-4 shadow-[0_16px_40px_-16px_rgba(15,30,54,0.45)]"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <p
+                  id="clear-chat-title"
+                  className="text-[14px] font-semibold text-[#1E2430]"
                 >
-                  <Send className="h-4 w-4" />
-                </TapButton>
-              </form>
-            )}
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+                  Clear this conversation?
+                </p>
+                <p
+                  id="clear-chat-desc"
+                  className="mt-1 text-[12px] leading-relaxed text-[#6B7280]"
+                >
+                  This removes the current chat history from this device thread.
+                </p>
+                <div className="mt-3.5 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setClearConfirmOpen(false)}
+                    className="flex h-10 items-center justify-center rounded-xl border border-[#E8E2D6] bg-[#FFFDF9] text-[12px] font-semibold text-[#0F1E36] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8963E]/45"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={clearMutation.isPending}
+                    onClick={() => {
+                      setClearConfirmOpen(false);
+                      startNewChat();
+                    }}
+                    className="flex h-10 items-center justify-center rounded-xl bg-[#0F1E36] text-[12px] font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8963E]/50 disabled:opacity-50"
+                  >
+                    {clearMutation.isPending ? 'Clearing…' : 'Clear'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+
+  return (
+    <>
+      {portalTarget ? createPortal(chatPanel, portalTarget) : chatPanel}
 
       {!open ? (
         <motion.button
+          ref={launcherRef}
           type="button"
           whileTap={{ scale: 0.97 }}
           aria-label="Open Scholara assistant"
@@ -1268,6 +1443,8 @@ function ChatBubble({
   canBookSession = false,
   userRole,
   showSuggestions = false,
+  showAvatar = true,
+  showTimestamp = true,
   scheduleActive = false,
   scheduleDateHint = '',
   onScheduleStatusChange,
@@ -1285,6 +1462,8 @@ function ChatBubble({
   canBookSession?: boolean;
   userRole?: string;
   showSuggestions?: boolean;
+  showAvatar?: boolean;
+  showTimestamp?: boolean;
   scheduleActive?: boolean;
   scheduleDateHint?: string;
   onScheduleStatusChange?: (status: ScheduleWizardStatus) => void;
@@ -1316,18 +1495,46 @@ function ChatBubble({
   const hasFooterActions =
     showNav || showChatHome || showEndChat || suggestions.length > 0;
 
+  const timeLabel = showTimestamp ? formatChatTime(message.createdAt) : '';
+  const reduceMotion = useReducedMotion();
+  const enter = reduceMotion
+    ? undefined
+    : { initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.16 } };
+
   if (isUser) {
     return (
-      <div className="ml-auto max-w-[88%] rounded-2xl rounded-br-md bg-[#0B1528] px-3 py-2.5 text-sm leading-snug text-[oklch(0.98_0.01_85)]">
-        <p className="whitespace-pre-wrap font-semibold">{message.content}</p>
-      </div>
+      <motion.div
+        {...enter}
+        className="ml-auto flex max-w-[88%] flex-col items-end gap-1"
+      >
+        <div className="rounded-2xl rounded-br-md bg-[#0F1E36] px-3.5 py-2.5 text-sm leading-relaxed text-white shadow-[0_2px_8px_rgba(15,30,54,0.12)]">
+          <p className="whitespace-pre-wrap font-medium">{message.content}</p>
+        </div>
+        {timeLabel ? (
+          <p className="px-1 text-[10px] font-medium text-[#6B7280]">{timeLabel}</p>
+        ) : null}
+      </motion.div>
     );
   }
 
-  // Assistant: full-width flat stack — no nested outer bubble.
   return (
-    <div className="w-full space-y-2.5">
-      {renderAssistantContent(message.content)}
+    <motion.div {...enter} className="flex w-full items-end gap-2">
+      {showAvatar ? (
+        <span
+          className={cn(
+            'flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#0F1E36] ring-1 ring-[#E5CE96]/40',
+            showTimestamp ? 'mb-5' : 'mb-0.5',
+          )}
+        >
+          <CrestMark size={16} />
+        </span>
+      ) : (
+        <span className="w-7 shrink-0" aria-hidden />
+      )}
+      <div className="min-w-0 flex-1 space-y-2">
+        <div className="rounded-2xl rounded-bl-md border border-[#E8E2D6] bg-white px-3.5 py-3 text-[13px] leading-relaxed text-[#1E2430] shadow-[0_1px_2px_rgba(15,30,54,0.04)]">
+          {renderAssistantContent(message.content)}
+        </div>
       {scheduleMode ? (
         !canBookSession ? (
           <div className="rounded-2xl border border-[#EBE8E0]/80 bg-white p-3.5 text-xs leading-relaxed text-[#8B92A5] shadow-elev1">
@@ -1400,6 +1607,19 @@ function ChatBubble({
             : null}
         </div>
       ) : null}
-    </div>
+        {timeLabel ? (
+          <p className="px-1 text-[10px] font-medium text-[#6B7280]">{timeLabel}</p>
+        ) : null}
+      </div>
+    </motion.div>
   );
+}
+
+function formatChatTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }

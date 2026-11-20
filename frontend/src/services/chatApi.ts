@@ -5,10 +5,17 @@ export interface ChatMessageDto {
   role: 'user' | 'assistant' | 'system';
   content: string;
   createdAt: string;
+  contextStudentId?: string | null;
 }
 
-export async function fetchChatMessages() {
-  const { data } = await api.get<ChatMessageDto[]>('/chat/messages');
+function contextParams(studentId?: string) {
+  return studentId ? { studentId } : undefined;
+}
+
+export async function fetchChatMessages(studentId?: string) {
+  const { data } = await api.get<ChatMessageDto[]>('/chat/messages', {
+    params: contextParams(studentId),
+  });
   return data;
 }
 
@@ -28,7 +35,9 @@ export async function sendChatMessage(
   return data;
 }
 
-export async function clearChatMessages() {
-  const { data } = await api.delete<{ deleted: number }>('/chat/messages');
+export async function clearChatMessages(studentId?: string) {
+  const { data } = await api.delete<{ deleted: number }>('/chat/messages', {
+    params: contextParams(studentId),
+  });
   return data;
 }

@@ -1,5 +1,14 @@
-import { Body, Controller, Delete, Get, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { IsOptional, IsUUID } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -8,6 +17,12 @@ import { JwtPayload } from '../auth/jwt-payload';
 import { UserRole } from '../common/enums';
 import { ChatService } from './chat.service';
 import { SendChatMessageDto } from './dto/send-chat-message.dto';
+
+class ChatContextQueryDto {
+  @IsOptional()
+  @IsUUID()
+  studentId?: string;
+}
 
 @ApiTags('chat')
 @ApiBearerAuth()
@@ -18,8 +33,14 @@ export class ChatController {
 
   @Get('messages')
   @Roles(UserRole.STUDENT, UserRole.GUARDIAN, UserRole.CONSULTANT)
-  list(@CurrentUser() user: unknown) {
-    return this.chatService.listMessages(user as JwtPayload);
+  list(
+    @CurrentUser() user: unknown,
+    @Query() query: ChatContextQueryDto,
+  ) {
+    return this.chatService.listMessages(
+      user as JwtPayload,
+      query.studentId,
+    );
   }
 
   @Post('messages')
@@ -30,7 +51,13 @@ export class ChatController {
 
   @Delete('messages')
   @Roles(UserRole.STUDENT, UserRole.GUARDIAN, UserRole.CONSULTANT)
-  clear(@CurrentUser() user: unknown) {
-    return this.chatService.clearMessages(user as JwtPayload);
+  clear(
+    @CurrentUser() user: unknown,
+    @Query() query: ChatContextQueryDto,
+  ) {
+    return this.chatService.clearMessages(
+      user as JwtPayload,
+      query.studentId,
+    );
   }
 }

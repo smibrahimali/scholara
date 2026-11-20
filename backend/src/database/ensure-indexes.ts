@@ -19,6 +19,8 @@ export async function ensureHotIndexes(dataSource: DataSource): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_chat_requests_consultant_status ON chat_requests (consultant_id, status)`,
     `CREATE INDEX IF NOT EXISTS idx_chat_requests_student_status ON chat_requests (student_id, status)`,
     `CREATE INDEX IF NOT EXISTS idx_chat_messages_user_created ON chat_messages (user_id, created_at)`,
+    `ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS context_student_id uuid`,
+    `CREATE INDEX IF NOT EXISTS idx_chat_messages_user_context_created ON chat_messages (user_id, context_student_id, created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS idx_direct_messages_conversation_created ON direct_messages (conversation_id, created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS idx_conversations_consultant_id ON conversations (consultant_id)`,
     `CREATE INDEX IF NOT EXISTS idx_university_emails_application_id ON university_emails (application_id)`,

@@ -209,6 +209,18 @@ describe('chatFormat (colon cards & suggestions)', () => {
     assert.match(stripAssistantDirectives(raw), /Here is your status/);
   });
 
+  it('parses mangled SUGGESTIONS that use em dashes or omit closing brackets', () => {
+    const raw =
+      'Once that review is complete, proceed.\n• [[SUGGESTIONS:Check Fee Status— View Application';
+    assert.deepEqual(parseSuggestions(raw), [
+      'Check Fee Status',
+      'View Application',
+    ]);
+    const cleaned = stripAssistantDirectives(raw);
+    assert.equal(cleaned.includes('[[SUGGESTIONS'), false);
+    assert.equal(cleaned.includes('Check Fee Status'), false);
+  });
+
   it('dedupes repeated status words in legacy text', () => {
     assert.equal(
       dedupeRepeatedStatusWords('Passport Not Uploaded Not Uploaded'),

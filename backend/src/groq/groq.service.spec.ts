@@ -63,4 +63,56 @@ describe('GroqService safe errors (P1-4)', () => {
       service.chatCompletion([{ role: 'user', content: 'hi' }]),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
+
+  it('retries TPM rate limits then succeeds', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        json: () =>
+          Promise.resolve({
+            error: {
+              message:
+                'Rate limit reached on tokens per minute (TPM). Please try again in 0.01s.',
+            },
+          }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            choices: [{ message: { content: 'recovered reply' } }],
+          }),
+      }) as never;
+
+    await expect(
+      service.chatCompletion([{ role: 'user', content: 'hi' }]),
+    ).resolves.toBe('recovered reply');
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    const body = JSON.parse(
+      (global.fetch as jest.Mock).mock.calls[0][1].body as string,
+    );
+    expect(body.max_tokens).toBe(600);
+  });
+
+  it('does not retry daily (TPD) rate limits', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: () =>
+        Promise.resolve({
+          error: {
+            message:
+              'Rate limit reached on tokens per day (TPD): Limit 200000. Please try again in 39m.',
+          },
+        }),
+    }) as never;
+
+    await expect(
+      service.chatCompletion([{ role: 'user', content: 'hi' }]),
+    ).rejects.toThrow(/daily quota/i);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
 });

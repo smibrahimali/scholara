@@ -320,13 +320,18 @@ export function stripEndChatDirective(content: string): string {
 }
 
 export const SUGGESTIONS_DIRECTIVE_RE =
-  /\[\[SUGGESTIONS:([^\]]+)\]\]/g;
+  /\[\[SUGGESTIONS:([^\]]*)\]\]/gi;
+/** Unclosed / mangled suggestion tokens the model sometimes emits. */
+const SUGGESTIONS_LOOSE_RE =
+  /\[\[\s*SUGGESTIONS\s*:\s*([^\]]+?)(?:\]\]|$)/gi;
 
 export function parseSuggestions(content: string): string[] {
-  const match = /\[\[SUGGESTIONS:([^\]]+)\]\]/.exec(content);
+  const match =
+    /\[\[\s*SUGGESTIONS\s*:\s*([^\]]+?)(?:\]\]|$)/i.exec(content);
   if (!match?.[1]) return [];
   return match[1]
-    .split('|')
+    // Models sometimes use em/en dashes instead of |
+    .split(/\||—|–| {1,}[-–—] {1,}/)
     .map((s) => s.trim())
     .filter(Boolean)
     .slice(0, 4);
@@ -388,6 +393,8 @@ export function filterSuggestionChips(
 export function stripSuggestionsDirective(content: string): string {
   return content
     .replace(SUGGESTIONS_DIRECTIVE_RE, '')
+    .replace(SUGGESTIONS_LOOSE_RE, '')
+    .replace(/^\s*[•*·]\s*$/gm, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

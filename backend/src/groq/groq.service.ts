@@ -24,11 +24,15 @@ interface GroqChatCompletionResponse {
   };
 }
 
+const DEFAULT_MAX_TOKENS = 600;
+const MAX_TPM_RETRIES = 2;
+
 @Injectable()
 export class GroqService implements OnModuleInit {
   private readonly logger = new Logger(GroqService.name);
   private apiKey: string | null = null;
   private model = 'openai/gpt-oss-20b';
+  private maxTokens = DEFAULT_MAX_TOKENS;
   private readonly endpoint = 'https://api.groq.com/openai/v1/chat/completions';
 
   constructor(private readonly config: ConfigService) {}
@@ -36,6 +40,7 @@ export class GroqService implements OnModuleInit {
   onModuleInit() {
     const key = this.config.get<string>('GROQ_API_KEY')?.trim();
     const model = this.config.get<string>('GROQ_MODEL')?.trim();
+    const maxTokensRaw = this.config.get<string>('GROQ_MAX_TOKENS')?.trim();
 
     if (!key || key.includes('your_')) {
       this.logger.warn(
@@ -48,7 +53,15 @@ export class GroqService implements OnModuleInit {
     if (model) {
       this.model = model;
     }
-    this.logger.log(`Groq client ready (model=${this.model})`);
+    if (maxTokensRaw) {
+      const parsed = Number.parseInt(maxTokensRaw, 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        this.maxTokens = parsed;
+      }
+    }
+    this.logger.log(
+      `Groq client ready (model=${this.model}, max_tokens=${this.maxTokens})`,
+    );
   }
 
   isConfigured(): boolean {
@@ -72,45 +85,68 @@ export class GroqService implements OnModuleInit {
       );
     }
 
-    let response: Response;
-    try {
-      response = await fetch(this.endpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: this.model,
-          messages,
-          temperature: 0.4,
-        }),
-        signal: AbortSignal.timeout(30_000),
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Unknown network error';
-      this.logger.error(`Groq request failed: ${message}`);
+    let lastDetail = 'Unknown Groq error';
+    for (let attempt = 0; attempt <= MAX_TPM_RETRIES; attempt += 1) {
+      let response: Response;
+      try {
+        response = await fetch(this.endpoint, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: this.model,
+            messages,
+            temperature: 0.3,
+            max_tokens: this.maxTokens,
+          }),
+          signal: AbortSignal.timeout(30_000),
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown network error';
+        this.logger.error(`Groq request failed: ${message}`);
+        throw new ServiceUnavailableException(
+          'Could not reach Groq. Try again shortly.',
+        );
+      }
+
+      const payload = await this.readJson<GroqChatCompletionResponse>(response);
+
+      if (response.ok) {
+        const content = payload.choices?.[0]?.message?.content?.trim();
+        if (!content) {
+          throw new ServiceUnavailableException('Groq returned an empty reply.');
+        }
+        return content;
+      }
+
+      lastDetail = payload.error?.message ?? `HTTP ${response.status}`;
+      this.logger.error(`Groq API error: ${lastDetail}`);
+
+      const retryable =
+        response.status === 429 && this.isRetryableRateLimit(lastDetail);
+      if (retryable && attempt < MAX_TPM_RETRIES) {
+        const delayMs =
+          this.parseRetryDelayMs(lastDetail) ?? 1500 * (attempt + 1);
+        this.logger.warn(
+          `Groq TPM rate limit — retrying in ${delayMs}ms (attempt ${attempt + 1}/${MAX_TPM_RETRIES})`,
+        );
+        await sleep(delayMs);
+        continue;
+      }
+
       throw new ServiceUnavailableException(
-        'Could not reach Groq. Try again shortly.',
+        this.isDailyRateLimit(lastDetail)
+          ? 'AI daily quota reached. Try again after the quota resets, or raise Groq limits.'
+          : 'AI temporarily unavailable. Try again shortly.',
       );
     }
 
-    const payload = await this.readJson<GroqChatCompletionResponse>(response);
-
-    if (!response.ok) {
-      const detail = payload.error?.message ?? `HTTP ${response.status}`;
-      this.logger.error(`Groq API error: ${detail}`);
-      throw new ServiceUnavailableException(
-        'AI temporarily unavailable. Try again shortly.',
-      );
-    }
-
-    const content = payload.choices?.[0]?.message?.content?.trim();
-    if (!content) {
-      throw new ServiceUnavailableException('Groq returned an empty reply.');
-    }
-    return content;
+    throw new ServiceUnavailableException(
+      `AI temporarily unavailable. Try again shortly.`,
+    );
   }
 
   async transcribeAudio(
@@ -169,6 +205,32 @@ export class GroqService implements OnModuleInit {
     return text;
   }
 
+  /** Retry TPM spikes; never retry daily (TPD) exhaustion. */
+  private isRetryableRateLimit(detail: string): boolean {
+    if (this.isDailyRateLimit(detail)) return false;
+    const lower = detail.toLowerCase();
+    return (
+      lower.includes('rate limit') ||
+      lower.includes('tokens per minute') ||
+      lower.includes('tpm')
+    );
+  }
+
+  private isDailyRateLimit(detail: string): boolean {
+    const lower = detail.toLowerCase();
+    return lower.includes('tokens per day') || lower.includes('tpd');
+  }
+
+  /** Parse "Please try again in 14.2s" / "15.555s" from Groq errors. */
+  private parseRetryDelayMs(detail: string): number | null {
+    const match = detail.match(/try again in\s+(\d+(?:\.\d+)?)\s*s/i);
+    if (!match) return null;
+    const seconds = Number.parseFloat(match[1]);
+    if (!Number.isFinite(seconds) || seconds <= 0) return null;
+    // Cap so a long TPM wait does not block the request forever.
+    return Math.min(Math.ceil(seconds * 1000) + 250, 20_000);
+  }
+
   private async readJson<T>(response: Response): Promise<T> {
     try {
       return (await response.json()) as T;
@@ -181,4 +243,8 @@ export class GroqService implements OnModuleInit {
       );
     }
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
